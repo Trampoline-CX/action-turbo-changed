@@ -1,19 +1,42 @@
-import * as core from '@actions/core'
-import {wait} from './wait'
+import { getInput, debug, setFailed, setOutput } from '@actions/core'
+import * as github from '@actions/github'
+import { execSync } from 'child_process'
 
-async function run(): Promise<void> {
+const run = async (): Promise<void> => {
   try {
-    const ms: string = core.getInput('milliseconds')
-    core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
+    // Get Inputs
+    const workspace = getInput('workspace', { required: true })
+    const from = getInput('from', { required: true })
+    const to = getInput('to') || getDefaultTo()
 
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
+    debug(`Inputs: ${JSON.stringify({ workspace, from, to })}`)
 
-    core.setOutput('time', new Date().toTimeString())
+    const buffer = execSync(
+      `npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+    )
+
+    const json = buffer.toString('utf-8')
+
+    debug(`Output from Turborepo: ${json}`)
+
+    const parsedOutput = JSON.parse(json)
+    const changed = parsedOutput.packages.includes(workspace)
+
+    setOutput('changed', changed)
   } catch (error) {
-    if (error instanceof Error) core.setFailed(error.message)
+    if (error instanceof Error || typeof error === 'string') {
+      setFailed(error)
+    } else {
+      setFailed('Unknown error occured.')
+    }
   }
 }
+
+/**
+ * Get the current commit of the head branch on a `pull_request` event.
+ * For a push event, it will be the current commit of the current branch.
+ */
+const getDefaultTo = (): string =>
+  github.context.eventName === 'pull_request' ? (github.context as any).base_ref : 'HEAD'
 
 run()

@@ -12,6 +12,24 @@ Since this Github Action relies on Turborepo, you'll need to have Turborepo set 
 
 :warning: This was tested against a working monorepo using Yarn v3 (with Yarn Workspaces), but as it uses a standard Turborepo command behind the scenes, it should work with any monorepo setup compatible with Turborepo. See the `example/yarn-workspaces` folder for a working setup.
 
+## How to use
+
+In your workflow file, have the following:
+
+```yaml
+TODO
+```
+
+## How it works?
+
+Behind the scenes, this will run a Turborepo command looking like this to get the changed repositories:
+
+```bash
+yarn turbo run build --filter="<workspace>...[<from>...<to>]" --dry-run=json
+```
+
+The action then parses the returned JSON to check if the repository was changed or not.
+
 ## Disclaimer
 
 This project was bootstraped using [typescript-action](https://github.com/actions/typescript-action).
