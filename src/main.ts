@@ -1,6 +1,6 @@
+import { execSync } from 'child_process'
 import { getInput, debug, setFailed, setOutput } from '@actions/core'
 import * as github from '@actions/github'
-import { execSync } from 'child_process'
 
 const run = async (): Promise<void> => {
   try {
@@ -37,6 +37,7 @@ const run = async (): Promise<void> => {
  * For a push event, it will be the current commit of the current branch.
  */
 const getDefaultTo = (): string =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   github.context.eventName === 'pull_request' ? (github.context as any).base_ref : 'HEAD'
 
-run()
+void run()
