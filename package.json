@@ -1,8 +1,8 @@
 {
-  "name": "typescript-action",
+  "name": "action-turbo-changed",
   "version": "0.0.0",
   "private": true,
-  "description": "TypeScript template action",
+  "description": "A Github Action making it easy to check if a local workspace changed using Turborepo.",
   "main": "lib/main.js",
   "scripts": {
     "build": "tsc",
@@ -11,33 +11,33 @@
     "lint": "eslint src/**/*.ts",
     "package": "ncc build --source-map --license licenses.txt",
     "test": "jest",
-    "all": "npm run build && npm run format && npm run lint && npm run package && npm test"
+    "all": "yarn build && yarn format && yarn lint && yarn package && yarn test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
+    "url": "git+https://github.com/Trampoline-CX/action-turbo-changed.git"
   },
   "keywords": [
     "actions",
     "node",
     "setup"
   ],
-  "author": "",
+  "author": "Trampoline",
   "license": "MIT",
   "dependencies": {
-    "@actions/core": "^1.10.0"
+    "@actions/core": "1.10.0",
+    "@actions/github": "5.1.1"
   },
   "devDependencies": {
-    "@types/node": "^18.11.9",
-    "@typescript-eslint/parser": "^4.33.0",
-    "@vercel/ncc": "^0.34.0",
+    "@trampoline/eslint-config": "1.4.0",
+    "@types/node": "18.11.9",
+    "@vercel/ncc": "0.34.0",
     "eslint": "^7.32.0",
-    "eslint-plugin-github": "^4.3.2",
-    "eslint-plugin-jest": "^25.3.2",
     "jest": "^27.2.5",
     "js-yaml": "^4.1.0",
     "prettier": "2.8.0",
     "ts-jest": "^27.1.2",
-    "typescript": "^4.9.3"
-  }
+    "typescript": "4.9.3"
+  },
+  "packageManager": "yarn@3.3.0"
 }
