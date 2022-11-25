@@ -61,3 +61,9 @@ See the [versioning documentation](https://github.com/actions/toolkit/blob/maste
 ### Tag and Release
 
 After testing you can [create a tag](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md) to reference the stable and latest action version.
+
+Process:
+
+1. Update `example-*` workflow files to point to new version
+2. `yarn version`
+3. Create Github release that points to newly created tag

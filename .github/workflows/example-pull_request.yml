@@ -20,7 +20,7 @@ jobs:
 
       - name: package-a changed since the main branch?
         id: changedAction
-        uses: Trampoline-CX/action-turbo-changed@v1-beta
+        uses: Trampoline-CX/action-turbo-changed@v1
         with:
           workspace: package-a
           from: main
@@ -28,5 +28,5 @@ jobs:
 
       # Do something more meaningful here, like do heavy computing, add PR label, etc.
       - name: Validate Action Output
-        if: steps.changedAction.outputs.changed # Check output if it changed or not (returns a boolean)
+        if: steps.changedAction.outputs.changed == 'true' # Check output if it changed or not (returns a boolean)
         run: echo 'package-a changed!'

@@ -8,7 +8,7 @@ const run = async (): Promise<void> => {
     // Get Inputs
     const workspace = getInput('workspace', { required: true })
     const from = getInput('from', { required: true })
-    const to = getInput('to') || 'HEAD'
+    const to = getInput('to', { required: true })
     const workingDirectory = getInput('working-directory', { required: true })
 
     debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)

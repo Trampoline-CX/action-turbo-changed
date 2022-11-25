@@ -14,11 +14,46 @@ Since this Github Action relies on Turborepo, you'll need to have Turborepo set 
 
 ## How to use
 
-In your workflow file, have the following:
+Here is a minimal example of how to use the action to check if a workspace changed:
 
 ```yaml
-TODO
+name: 'example-push'
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Necessary so we have commit history to compare to
+
+      - name: package-a changed in last commit?
+        id: changedAction
+        uses: Trampoline-CX/action-turbo-changed@v1
+        with:
+          workspace: package-a
+          from: HEAD^1 # Check for changes since previous commit (feel free to put a branch name instead)
+
+      # Do something more meaningful here, like push to NPM, do heavy computing, etc.
+      - name: Validate Action Output
+        if: steps.changedAction.outputs.changed == 'true' # Check output if it changed or not (returns a boolean)
+        run: echo 'package-a changed!'
 ```
+
+> :information_source: Feel free to check the [`example_push.yml`](./.github/workflows/example-push.yml) and [`example-pull_request.yml`](./.github/workflows/example-pull_request.yml) files as well for more examples.
+
+### Options
+
+The following options can be passed to customize the behavior of the action:
+
+| Option Name         | Description                                                                                          | Default Value |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
+| `workspace`         | **(Required)** The workspace name we are interested in.                                              | NA            |
+| `from`              | **(Required)** Start of the commit range to check (can be a commit hash, a branch name or `HEAD^1`). | NA            |
+| `to`                | End of the commit range to check (can be a commit hash or branch).                                   | `HEAD`        |
+| `working-directory` | Path to the root of the monorepo.                                                                    | `./`          |
 
 ## How it works?
 
