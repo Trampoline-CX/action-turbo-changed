@@ -20,7 +20,7 @@ jobs:
 
       - name: package-a changed since the main branch?
         id: changedAction
-        uses: Trampoline-CX/action-turbo-changed@v1
+        uses: Trampoline-CX/action-turbo-changed@v1-beta
         with:
           workspace: package-a
           from: main

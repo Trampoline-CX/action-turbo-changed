@@ -1,6 +1,6 @@
 {
   "name": "action-turbo-changed",
-  "version": "0.0.0",
+  "version": "1.0.0-beta",
   "private": true,
   "description": "A Github Action making it easy to check if a local workspace changed using Turborepo.",
   "main": "lib/main.js",
