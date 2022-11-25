@@ -8,7 +8,7 @@ const run = async (): Promise<void> => {
     // Get Inputs
     const workspace = getInput('workspace', { required: true })
     const from = getInput('from', { required: true })
-    const to = getInput('to') || getDefaultTo()
+    const to = getInput('to') || 'HEAD'
     const workingDirectory = getInput('working-directory', { required: true })
 
     debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)
@@ -35,13 +35,5 @@ const run = async (): Promise<void> => {
     }
   }
 }
-
-/**
- * Get the current commit of the head branch on a `pull_request` event.
- * For a push event, it will be the current commit of the current branch.
- */
-const getDefaultTo = (): string =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  github.context.eventName === 'pull_request' ? (github.context as any).base_ref : 'HEAD'
 
 void run()
