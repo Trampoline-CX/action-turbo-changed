@@ -1,0 +1,32 @@
+name: 'example-push'
+on: pull_request
+
+# IMPORTANT: You'll want to remove the defaults block and the working-directory on 2nd step.
+# Check for the comments ;)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # You'll want to delete this "defaults" block in your workflow.
+    # This is to make sure that all run actions run in the example/yarn-workspaces directory.
+    defaults:
+      run:
+        working-directory: example/yarn-workspaces
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Necessary so we have commit history to compare to
+
+      - name: package-a changed since the main branch?
+        id: changedAction
+        uses: Trampoline-CX/action-turbo-changed@v1
+        with:
+          workspace: package-a
+          from: main
+          working-directory: example/yarn-workspaces # You'll want to delete that on your end
+
+      # Do something more meaningful here, like do heavy computing, add PR label, etc.
+      - name: Validate Action Output
+        if: steps.changedAction.outputs.changed # Check output if it changed or not (returns a boolean)
+        run: echo 'package-a changed!'
