@@ -42,7 +42,7 @@ jobs:
         uses: ./
         with:
           workspace: package-a
-          from: HEAD^2
+          from: HEAD^1
           working-directory: example/yarn-workspaces
 
       # Validate that output is either true or false
