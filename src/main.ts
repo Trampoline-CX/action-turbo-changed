@@ -1,4 +1,5 @@
 import { execSync } from 'child_process'
+import { join } from 'path'
 import { getInput, debug, setFailed, setOutput } from '@actions/core'
 import * as github from '@actions/github'
 
@@ -8,14 +9,17 @@ const run = async (): Promise<void> => {
     const workspace = getInput('workspace', { required: true })
     const from = getInput('from', { required: true })
     const to = getInput('to') || getDefaultTo()
+    const workingDirectory = getInput('working-directory', { required: true })
 
     debug(`Inputs: ${JSON.stringify({ workspace, from, to })}`)
 
-    const buffer = execSync(
+    const json = await execSync(
       `npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      {
+        cwd: join(__dirname, '..', workingDirectory),
+        encoding: 'utf-8',
+      },
     )
-
-    const json = buffer.toString('utf-8')
 
     debug(`Output from Turborepo: ${json}`)
 

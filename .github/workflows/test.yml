@@ -40,10 +40,10 @@ jobs:
       - name: Test Action
         id: changedAction
         uses: ./
-        working-directory: example/yarn-workspaces
         with:
           workspace: package-a
           from: HEAD^2
+          working-directory: example/yarn-workspaces
 
       # Validate that output is either true or false
       - name: Validate Action Output

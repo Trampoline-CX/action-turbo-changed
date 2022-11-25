@@ -11,6 +11,10 @@ inputs:
   to:
     required: false
     description: 'End of the commit range to check (can be a commit hash or branch). If not provided, will be the current commit of the head branch on a `pull_request` event. For a push event, it will be the current commit of the current branch.'
+  working-directory:
+    required: false
+    description: 'Path to the root of the monorepo.'
+    default: './'
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
