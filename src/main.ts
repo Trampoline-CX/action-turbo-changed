@@ -11,12 +11,12 @@ const run = async (): Promise<void> => {
     const to = getInput('to') || getDefaultTo()
     const workingDirectory = getInput('working-directory', { required: true })
 
-    debug(`Inputs: ${JSON.stringify({ workspace, from, to })}`)
+    debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)
 
     const json = await execSync(
       `npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
       {
-        cwd: join(__dirname, '..', workingDirectory),
+        cwd: join(process.cwd(), workingDirectory),
         encoding: 'utf-8',
       },
     )
