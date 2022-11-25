@@ -65,5 +65,5 @@ After testing you can [create a tag](https://github.com/actions/toolkit/blob/mas
 Process:
 
 1. Update `example-*` workflow files to point to new version
-2. `yarn version`
+2. `yarn version -i patch|minor|major`
 3. Create Github release that points to newly created tag
