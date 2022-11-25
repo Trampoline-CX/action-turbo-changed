@@ -1,6 +1,9 @@
 name: 'Turbo Changed'
 description: 'A Github Action making it easy to check if a local workspace changed using Turborepo.'
 author: 'Trampoline'
+branding:
+  icon: git-branch
+  color: green
 inputs:
   workspace:
     required: true
