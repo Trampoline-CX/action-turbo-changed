@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@trampoline/eslint-config": "1.4.0",
-    "@types/node": "18.11.10",
+    "@types/node": "18.11.11",
     "@vercel/ncc": "0.34.0",
     "eslint": "^8.28.0",
     "jest": "^27.2.5",
