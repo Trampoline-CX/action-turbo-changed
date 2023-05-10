@@ -34,7 +34,7 @@ jobs:
         uses: Trampoline-CX/action-turbo-changed@v1
         with:
           workspace: package-a
-          from: HEAD^1 # Check for changes since previous commit (feel free to put a branch name instead)
+          from: HEAD^1 # Check for changes since previous commit (feel free to put a branch name instead in the form of origin/<branchName>)
 
       # Do something more meaningful here, like push to NPM, do heavy computing, etc.
       - name: Validate Action Output
@@ -54,6 +54,8 @@ The following options can be passed to customize the behavior of the action:
 | `from`              | **(Required)** Start of the commit range to check (can be a commit hash, a branch name or `HEAD^1`). | NA            |
 | `to`                | End of the commit range to check (can be a commit hash or branch).                                   | `HEAD`        |
 | `working-directory` | Path to the root of the monorepo.                                                                    | `./`          |
+
+_:information_source: If using branch names, be sure to specify them as `origin/<branchName>`, as otherwise you'll be comparing to a local branch, which in most cases won't exist._
 
 ## How it works?
 
