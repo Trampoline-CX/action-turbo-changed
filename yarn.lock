@@ -1133,10 +1133,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:18.16.3":
-  version: 18.16.3
-  resolution: "@types/node@npm:18.16.3"
-  checksum: 816b39d45b05ebdc6f362b630970df3f6d82f71d418a2555353522f4eeeb078fa201de5299f02c09a09faa975e43b2745fe19c263d44069f87ddf37d6c37b717
+"@types/node@npm:20.5.3":
+  version: 20.5.3
+  resolution: "@types/node@npm:20.5.3"
+  checksum: fe67a0fd7402218bdf91523a2b1c2e41d619f7294b1a471e0a778b8bc7bb3fcf291aed12041bcbe9622d50a3d1295a9adea0e7e19bb9386a246bf66071404721
   languageName: node
   linkType: hard
 
@@ -1390,7 +1390,7 @@ __metadata:
     "@actions/core": 1.10.0
     "@actions/github": 5.1.1
     "@trampoline/eslint-config": 1.7.0
-    "@types/node": 18.16.3
+    "@types/node": 20.5.3
     "@vercel/ncc": 0.36.1
     eslint: ^8.47.0
     jest: ^27.2.5
