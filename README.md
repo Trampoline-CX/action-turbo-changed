@@ -58,6 +58,15 @@ The following options can be passed to customize the behavior of the action:
 
 _:information_source: If using branch names, be sure to specify them as `origin/<branchName>`, as otherwise you'll be comparing to a local branch, which in most cases won't exist._
 
+### Outputs
+
+This Github Action emits the following outputs that are useful to automate subsequent actions of your CI/CD pipelines:
+
+| Output Name          | Description                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `changed`            | Boolean that will be true if the `workspace` option was changed. This is useful to conditionally run follow-up steps only if the workspace in question did change.             |
+| `affectedWorkspaces` | Name of the workspaces for which the `turbo-task-name` had to run on because they were not present in the Turborepo cache. Useful for running matrix jobs on these workspaces. |
+
 ## How it works?
 
 Behind the scenes, this will run a Turborepo command looking like this to get the changed repositories:
