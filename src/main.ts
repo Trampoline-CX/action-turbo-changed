@@ -27,6 +27,7 @@ const run = async (): Promise<void> => {
     const changed = parsedOutput.packages.includes(workspace)
 
     setOutput('changed', changed)
+    setOutput('affectedWorkspaces', parsedOutput.packages)
   } catch (error) {
     if (error instanceof Error || typeof error === 'string') {
       setFailed(error)

@@ -25,7 +25,8 @@ inputs:
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
-
+  affectedWorkspaces:
+    description: 'List of workspaces that were changed and for which the task needed to be run.'
 runs:
   using: 'node16'
   main: 'dist/index.js'
