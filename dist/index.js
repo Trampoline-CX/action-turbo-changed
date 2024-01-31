@@ -24,10 +24,11 @@ const run = () => __awaiter(void 0, void 0, void 0, function* () {
         // Get Inputs
         const workspace = (0, core_1.getInput)('workspace', { required: true });
         const from = (0, core_1.getInput)('from', { required: true });
-        const to = (0, core_1.getInput)('to') || 'HEAD';
+        const to = (0, core_1.getInput)('to', { required: true });
         const workingDirectory = (0, core_1.getInput)('working-directory', { required: true });
+        const turboTaskName = (0, core_1.getInput)('turbo-task-name', { required: true });
         (0, core_1.debug)(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`);
-        const json = yield (0, child_process_1.execSync)(`npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`, {
+        const json = yield (0, child_process_1.execSync)(`TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`, {
             cwd: (0, path_1.join)(process.cwd(), workingDirectory),
             encoding: 'utf-8',
         });
@@ -35,6 +36,7 @@ const run = () => __awaiter(void 0, void 0, void 0, function* () {
         const parsedOutput = JSON.parse(json);
         const changed = parsedOutput.packages.includes(workspace);
         (0, core_1.setOutput)('changed', changed);
+        (0, core_1.setOutput)('affectedWorkspaces', parsedOutput.packages);
     }
     catch (error) {
         if (error instanceof Error || typeof error === 'string') {
@@ -607,7 +609,7 @@ class OidcClient {
                 .catch(error => {
                 throw new Error(`Failed to get ID Token. \n 
         Error Code : ${error.statusCode}\n 
-        Error Message: ${error.result.message}`);
+        Error Message: ${error.message}`);
             });
             const id_token = (_a = res.result) === null || _a === void 0 ? void 0 : _a.value;
             if (!id_token) {
