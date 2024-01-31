@@ -19,58 +19,58 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"turbo-darwin-64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-darwin-64@npm:1.6.3"
+"turbo-darwin-64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-darwin-64@npm:1.12.0"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"turbo-darwin-arm64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-darwin-arm64@npm:1.6.3"
+"turbo-darwin-arm64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-darwin-arm64@npm:1.12.0"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"turbo-linux-64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-linux-64@npm:1.6.3"
+"turbo-linux-64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-linux-64@npm:1.12.0"
   conditions: os=linux & cpu=x64
   languageName: node
   linkType: hard
 
-"turbo-linux-arm64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-linux-arm64@npm:1.6.3"
+"turbo-linux-arm64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-linux-arm64@npm:1.12.0"
   conditions: os=linux & cpu=arm64
   languageName: node
   linkType: hard
 
-"turbo-windows-64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-windows-64@npm:1.6.3"
+"turbo-windows-64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-windows-64@npm:1.12.0"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
-"turbo-windows-arm64@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo-windows-arm64@npm:1.6.3"
+"turbo-windows-arm64@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo-windows-arm64@npm:1.12.0"
   conditions: os=win32 & cpu=arm64
   languageName: node
   linkType: hard
 
-"turbo@npm:1.6.3":
-  version: 1.6.3
-  resolution: "turbo@npm:1.6.3"
+"turbo@npm:1.12.0":
+  version: 1.12.0
+  resolution: "turbo@npm:1.12.0"
   dependencies:
-    turbo-darwin-64: 1.6.3
-    turbo-darwin-arm64: 1.6.3
-    turbo-linux-64: 1.6.3
-    turbo-linux-arm64: 1.6.3
-    turbo-windows-64: 1.6.3
-    turbo-windows-arm64: 1.6.3
+    turbo-darwin-64: 1.12.0
+    turbo-darwin-arm64: 1.12.0
+    turbo-linux-64: 1.12.0
+    turbo-linux-arm64: 1.12.0
+    turbo-windows-64: 1.12.0
+    turbo-windows-arm64: 1.12.0
   dependenciesMeta:
     turbo-darwin-64:
       optional: true
@@ -86,7 +86,7 @@ __metadata:
       optional: true
   bin:
     turbo: bin/turbo
-  checksum: 35195f4b7623014c25ba152c11a8cb23e51cbd75dc9266d0656692665f85b28faf3496dea8cecacf52795a917410668124186ffbdcf276325ccc3e11df9e9623
+  checksum: 2c79e7b40bc70749efe65acb569c3871227cc69ca49489bc4793e2105297de82c08158533bd6accb2e89f1b48dc3130a9a86c7f7e4c8738cf366516b9692ab74
   languageName: node
   linkType: hard
 
@@ -94,6 +94,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "yarn-workspaces@workspace:."
   dependencies:
-    turbo: 1.6.3
+    turbo: 1.12.0
   languageName: unknown
   linkType: soft
