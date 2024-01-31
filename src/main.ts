@@ -9,11 +9,12 @@ const run = async (): Promise<void> => {
     const from = getInput('from', { required: true })
     const to = getInput('to', { required: true })
     const workingDirectory = getInput('working-directory', { required: true })
+    const turboTaskName = getInput('turbo-task-name', { required: true })
 
     debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)
 
     const json = await execSync(
-      `npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      `TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
       {
         cwd: join(process.cwd(), workingDirectory),
         encoding: 'utf-8',

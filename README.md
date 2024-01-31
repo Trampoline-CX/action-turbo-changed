@@ -54,6 +54,7 @@ The following options can be passed to customize the behavior of the action:
 | `from`              | **(Required)** Start of the commit range to check (can be a commit hash, a branch name or `HEAD^1`). | NA            |
 | `to`                | End of the commit range to check (can be a commit hash or branch).                                   | `HEAD`        |
 | `working-directory` | Path to the root of the monorepo.                                                                    | `./`          |
+| `turbo-task-name`   | Name of the turborepo task to run                                                                    | `build`       |
 
 _:information_source: If using branch names, be sure to specify them as `origin/<branchName>`, as otherwise you'll be comparing to a local branch, which in most cases won't exist._
 
@@ -62,7 +63,7 @@ _:information_source: If using branch names, be sure to specify them as `origin/
 Behind the scenes, this will run a Turborepo command looking like this to get the changed repositories:
 
 ```bash
-yarn turbo run build --filter="<workspace>...[<from>...<to>]" --dry-run=json
+yarn turbo run <turbo-task-name> --filter="<workspace>...[<from>...<to>]" --dry-run=json
 ```
 
 The action then parses the returned JSON to check if the repository was changed or not.

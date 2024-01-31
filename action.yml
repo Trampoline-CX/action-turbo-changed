@@ -18,6 +18,10 @@ inputs:
     required: false
     description: 'Path to the root of the monorepo.'
     default: './'
+  turbo-task-name:
+    required: false
+    description: 'Name of the turbo task to run.'
+    default: 'Build'
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
