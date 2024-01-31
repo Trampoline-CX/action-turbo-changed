@@ -46,6 +46,11 @@ jobs:
           working-directory: example/yarn-workspaces
 
       # Validate that output is either true or false
-      - name: Validate Action Output
+      - name: Validate Action changed Output
         run: |
           [[ "${{ steps.changedAction.outputs.changed }}" = "true" || "${{ steps.changedAction.outputs.changed }}" = "false" ]] && exit 0 || exit 1
+
+      # Validate that output is valid json
+      - name: Validate Action affectedWorkspaces Output
+        run: |
+          jq -reM '""' <<<'${{ steps.changedAction.outputs.affectedWorkspaces }}' 1>/dev/null
