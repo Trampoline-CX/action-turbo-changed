@@ -62,10 +62,10 @@ _:information_source: If using branch names, be sure to specify them as `origin/
 
 This Github Action emits the following outputs that are useful to automate subsequent actions of your CI/CD pipelines:
 
-| Output Name          | Description                                                                                                                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `changed`            | Boolean that will be true if the `workspace` option was changed. This is useful to conditionally run follow-up steps only if the workspace in question did change.             |
-| `affectedWorkspaces` | Name of the workspaces for which the `turbo-task-name` had to run on because they were not present in the Turborepo cache. Useful for running matrix jobs on these workspaces. |
+| Output Name          | Description                                                                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changed`            | Boolean that will be true if the `workspace` option was changed. This is useful to conditionally run follow-up steps only if the workspace in question did change.                                                                                         |
+| `affectedWorkspaces` | Name of the workspaces for which the `turbo-task-name` had to run on because they were not present in the Turborepo cache. Useful for running matrix jobs on these workspaces for advanced use cases that might not be achievable through Turborepo tasks. |
 
 ## How it works?
 
