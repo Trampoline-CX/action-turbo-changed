@@ -22,7 +22,7 @@ inputs:
   turbo-task-name:
     required: false
     description: 'Name of the turbo task to run.'
-    default: 'Build'
+    default: 'build'
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
