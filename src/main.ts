@@ -1,7 +1,6 @@
 import { execSync } from 'child_process'
 import { join } from 'path'
 import { getInput, debug, setFailed, setOutput } from '@actions/core'
-import * as github from '@actions/github'
 
 const run = async (): Promise<void> => {
   try {
