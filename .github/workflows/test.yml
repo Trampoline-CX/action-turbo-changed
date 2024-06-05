@@ -28,7 +28,7 @@ jobs:
       - name: Run Tests
         run: yarn test
 
-  test: # make sure the action works on a clean machine without building
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -44,6 +44,33 @@ jobs:
           workspace: package-a
           from: HEAD^1
           working-directory: example/yarn-workspaces
+
+      # Validate that output is either true or false
+      - name: Validate Action changed Output
+        run: |
+          [[ "${{ steps.changedAction.outputs.changed }}" = "true" || "${{ steps.changedAction.outputs.changed }}" = "false" ]] && exit 0 || exit 1
+
+      # Validate that output is valid json
+      - name: Validate Action affectedWorkspaces Output
+        run: |
+          jq -reM '""' <<<'${{ steps.changedAction.outputs.affectedWorkspaces }}' 1>/dev/null
+
+  test-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to fetch range
+
+      # Run the action on the yarn-workspaces example
+      - name: Test Action
+        id: changedAction
+        uses: ./
+        with:
+          workspace: package-a
+          from: HEAD^1
+          working-directory: example/yarn-workspaces-turbo-v2
 
       # Validate that output is either true or false
       - name: Validate Action changed Output
