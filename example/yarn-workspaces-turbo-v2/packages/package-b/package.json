@@ -1,0 +1,8 @@
+{
+  "name": "package-b",
+  "packageManager": "yarn@3.3.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'B built'"
+  }
+}

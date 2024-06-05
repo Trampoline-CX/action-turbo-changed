@@ -23,6 +23,9 @@ inputs:
     required: false
     description: 'Name of the turbo task to run.'
     default: 'build'
+  turbo-major-version:
+    required: false
+    description: 'Major version of the turbo package used. If not provided, the major version will be inferred from the version installed in package.json.'
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
