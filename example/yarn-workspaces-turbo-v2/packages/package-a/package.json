@@ -1,0 +1,11 @@
+{
+  "name": "package-a",
+  "packageManager": "yarn@3.3.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'A built'"
+  },
+  "dependencies": {
+    "package-b": "workspace:*"
+  }
+}
