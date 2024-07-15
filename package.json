@@ -31,7 +31,7 @@
     "@trampoline/eslint-config": "1.8.0",
     "@types/node": "20.14.10",
     "@vercel/ncc": "0.38.1",
-    "eslint": "^9.6.0",
+    "eslint": "^9.7.0",
     "jest": "^27.2.5",
     "js-yaml": "^4.1.0",
     "prettier": "3.3.2",
