@@ -28,7 +28,7 @@ const run = () => __awaiter(void 0, void 0, void 0, function* () {
         const workingDirectory = (0, core_1.getInput)('working-directory', { required: true });
         const turboTaskName = (0, core_1.getInput)('turbo-task-name', { required: true });
         (0, core_1.debug)(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`);
-        const json = yield (0, child_process_1.execSync)(`TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 yarn dlx turbo@1.13.4 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`, {
+        const json = yield (0, child_process_1.execSync)(`TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 yarn dlx turbo@1.13.4 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run`, {
             cwd: (0, path_1.join)(process.cwd(), workingDirectory),
             encoding: 'utf-8',
         });

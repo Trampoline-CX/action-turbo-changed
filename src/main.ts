@@ -14,7 +14,7 @@ const run = async (): Promise<void> => {
     debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)
 
     const json = await execSync(
-      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 yarn dlx turbo@1.13.4 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 yarn dlx turbo@1.13.4 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run`,
       {
         cwd: join(process.cwd(), workingDirectory),
         encoding: 'utf-8',
