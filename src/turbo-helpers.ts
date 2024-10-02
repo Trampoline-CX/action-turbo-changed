@@ -1,6 +1,6 @@
-import { debug, getInput, setFailed } from '@actions/core'
 import { execSync } from 'child_process'
 import { join } from 'path'
+import { debug, getInput, setFailed } from '@actions/core'
 import semver from 'semver'
 
 export type TurboVersion = 1 | 2
@@ -13,13 +13,16 @@ export type TurboVersion = 1 | 2
  * @returns 1 | 2
  */
 export const getTurboMajorVersion = (workingDirectory: string): TurboVersion | false => {
-  let turboMajorVersion = getInput('turbo-major-version', { required: false })
+  const turboMajorVersion = getInput('turbo-major-version', { required: false })
+  debug(`Turbo major version from input: ${turboMajorVersion}`)
 
   if (!turboMajorVersion) {
     debug('Reading package.json to find turbo version')
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { devDependencies, dependencies } = require(join(workingDirectory, 'package.json'))
 
     const turboMajorVersion = devDependencies?.turbo || dependencies?.turbo
+    debug(`Turbo major version from package.json: ${turboMajorVersion}`)
 
     if (!turboMajorVersion) {
       setFailed(
@@ -35,6 +38,7 @@ export const getTurboMajorVersion = (workingDirectory: string): TurboVersion | f
     setFailed(`Expected turbo major version to be either 1 or 2, detected version ${major}.`)
     return false
   } else {
+    debug(`Using Turbo major version: ${major}`)
     return major as TurboVersion
   }
 }
@@ -61,36 +65,36 @@ export const getTurboChangedWorkspaces = async ({
   to,
   workingDirectory,
 }: GetTurboChangedWorkspacesOptions): Promise<ChangedWorkspaces> => {
-  // if (majorTurboVersion === 1) {
-  const json = await execSync(
-    `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^${majorTurboVersion} run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
-    {
-      cwd: join(process.cwd(), workingDirectory),
-      encoding: 'utf-8',
-    },
-  )
+  if (majorTurboVersion === 1) {
+    const json = execSync(
+      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^${majorTurboVersion} run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      {
+        cwd: join(process.cwd(), workingDirectory),
+        encoding: 'utf-8',
+      },
+    )
 
-  debug(`Output from Turborepo: ${json}`)
+    debug(`Output from Turborepo: ${json}`)
 
-  const parsedOutput = JSON.parse(json)
-  const changed = parsedOutput.packages.includes(workspace)
+    const parsedOutput = JSON.parse(json)
+    const changed = parsedOutput.packages.includes(workspace)
 
-  return { changed, affectedWorkspaces: parsedOutput.packages }
-  // } else {
-  //   // Turbo v2
-  //   const json = await execSync(
-  //     `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^1 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
-  //     {
-  //       cwd: join(process.cwd(), workingDirectory),
-  //       encoding: 'utf-8',
-  //     },
-  //   )
+    return { changed, affectedWorkspaces: parsedOutput.packages }
+  } else {
+    // Turbo v2
+    const json = execSync(
+      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^2 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      {
+        cwd: join(process.cwd(), workingDirectory),
+        encoding: 'utf-8',
+      },
+    )
 
-  //   debug(`Output from Turborepo: ${json}`)
+    debug(`Output from Turborepo: ${json}`)
 
-  //   const parsedOutput = JSON.parse(json)
-  //   const changed = parsedOutput.packages.includes(workspace)
+    const parsedOutput = JSON.parse(json)
+    const changed = parsedOutput.packages.includes(workspace)
 
-  //   return { changed, affectedWorkspaces: parsedOutput.packages }
-  // }
+    return { changed, affectedWorkspaces: parsedOutput.packages }
+  }
 }

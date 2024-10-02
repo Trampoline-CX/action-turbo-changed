@@ -28,22 +28,33 @@ jobs:
       - name: Run Tests
         run: yarn test
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Required to fetch range
-
       # Run the action on the yarn-workspaces example
-      - name: Test Action
+      - name: Test Action v1
         id: changedAction
         uses: ./
         with:
           workspace: package-a
           from: HEAD^1
           working-directory: example/yarn-workspaces
+
+      # Validate that output is either true or false
+      - name: Validate Action changed Output v1
+        run: |
+          [[ "${{ steps.changedAction.outputs.changed }}" = "true" || "${{ steps.changedAction.outputs.changed }}" = "false" ]] && exit 0 || exit 1
+
+      # Validate that output is valid json
+      - name: Validate Action affectedWorkspaces Output v1
+        run: |
+          jq -reM '""' <<<'${{ steps.changedAction.outputs.affectedWorkspaces }}' 1>/dev/null
+
+      # Run the action on the yarn-workspaces example
+      - name: Test Action v2
+        id: changedActionv2
+        uses: ./
+        with:
+          workspace: package-a
+          from: HEAD^1
+          working-directory: example/yarn-workspaces-turbo-v2
 
       # Validate that output is either true or false
       - name: Validate Action changed Output
@@ -55,22 +66,15 @@ jobs:
         run: |
           jq -reM '""' <<<'${{ steps.changedAction.outputs.affectedWorkspaces }}' 1>/dev/null
 
-  test-v2:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Required to fetch range
-
       # Run the action on the yarn-workspaces example
-      - name: Test Action
-        id: changedAction
+      - name: Test Action v2
+        id: changedActionv2Parameter
         uses: ./
         with:
           workspace: package-a
           from: HEAD^1
           working-directory: example/yarn-workspaces-turbo-v2
+          turbo-major-version: 2
 
       # Validate that output is either true or false
       - name: Validate Action changed Output

@@ -1,8 +1,4 @@
-import { execSync } from 'child_process'
-import { join } from 'path'
 import { getInput, debug, setFailed, setOutput } from '@actions/core'
-import { promises } from 'fs'
-import semver from 'semver'
 import { getTurboChangedWorkspaces, getTurboMajorVersion } from './turbo-helpers'
 
 const run = async (): Promise<void> => {

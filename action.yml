@@ -32,5 +32,5 @@ outputs:
   affectedWorkspaces:
     description: 'List of workspaces that were changed and for which the task needed to be run.'
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/index.js'
