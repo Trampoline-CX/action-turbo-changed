@@ -10,7 +10,7 @@ A Github Action making it easy to check if a local workspace changed using [Turb
 
 Since this Github Action relies on Turborepo, you'll need to have Turborepo set up in your repository before using this. Also, this action relies on the fact that you have a `build` pipeline configured as it makes use of `turbo run build --dry-run` behind the scenes.
 
-:warning: This was tested against a working monorepo using Yarn v3 (with Yarn Workspaces), but as it uses a standard Turborepo command behind the scenes, it should work with any monorepo setup compatible with Turborepo. See the `example/yarn-workspaces` folder for a working setup.
+:warning: This was tested against a working monorepo using Yarn v3 (with Yarn Workspaces), but as it uses a standard Turborepo command behind the scenes, it should work with any monorepo setup compatible with Turborepo. See the `example/` folders for working setups.
 
 ## How to use
 
