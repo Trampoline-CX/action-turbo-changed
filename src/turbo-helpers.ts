@@ -16,7 +16,8 @@ export type TurboVersion = 1 | 2
 export const getTurboMajorVersion = async (
   workingDirectory: string,
 ): Promise<TurboVersion | false> => {
-  const turboMajorVersion = getInput('turbo-major-version', { required: false })
+  let turboMajorVersion: string | undefined = getInput('turbo-major-version', { required: false })
+  let major: number
   debug(`Turbo major version from input: ${turboMajorVersion}`)
 
   if (!turboMajorVersion) {
@@ -24,7 +25,7 @@ export const getTurboMajorVersion = async (
 
     const packageJson = await load(workingDirectory)
 
-    const turboMajorVersion =
+    turboMajorVersion =
       packageJson.content.devDependencies?.turbo || packageJson.content.dependencies?.turbo
     debug(`Turbo major version from package.json: ${turboMajorVersion}`)
 
@@ -34,9 +35,10 @@ export const getTurboMajorVersion = async (
       )
       return false
     }
+    major = semver.major(turboMajorVersion)
+  } else {
+    major = parseInt(turboMajorVersion)
   }
-
-  const major = semver.major(turboMajorVersion)
 
   if (major < 1 || major > 2) {
     setFailed(`Expected turbo major version to be either 1 or 2, detected version ${major}.`)
@@ -71,7 +73,7 @@ export const getTurboChangedWorkspaces = async ({
 }: GetTurboChangedWorkspacesOptions): Promise<ChangedWorkspaces> => {
   if (majorTurboVersion === 1) {
     const json = execSync(
-      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^${majorTurboVersion} run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
+      `TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^1 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
       {
         cwd: join(process.cwd(), workingDirectory),
         encoding: 'utf-8',
