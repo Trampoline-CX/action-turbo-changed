@@ -10,7 +10,7 @@ const run = async (): Promise<void> => {
     const workingDirectory = getInput('working-directory', { required: true })
     const turboTaskName = getInput('turbo-task-name', { required: true })
 
-    const majorTurboVersion = getTurboMajorVersion(workingDirectory)
+    const majorTurboVersion = await getTurboMajorVersion(workingDirectory)
 
     if (!majorTurboVersion) return // Means that getting the version failed and threw an error
 

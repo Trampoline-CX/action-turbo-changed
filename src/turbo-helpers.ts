@@ -2,6 +2,7 @@ import { execSync } from 'child_process'
 import { join } from 'path'
 import { debug, getInput, setFailed } from '@actions/core'
 import semver from 'semver'
+import { load } from '@npmcli/package-json'
 
 export type TurboVersion = 1 | 2
 
@@ -12,19 +13,22 @@ export type TurboVersion = 1 | 2
  *
  * @returns 1 | 2
  */
-export const getTurboMajorVersion = (workingDirectory: string): TurboVersion | false => {
+export const getTurboMajorVersion = async (
+  workingDirectory: string,
+): Promise<TurboVersion | false> => {
   const turboMajorVersion = getInput('turbo-major-version', { required: false })
   debug(`Turbo major version from input: ${turboMajorVersion}`)
 
   if (!turboMajorVersion) {
     debug('Reading package.json to find turbo version')
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { devDependencies, dependencies } = require(join(workingDirectory, 'package.json'))
 
-    const turboMajorVersion = devDependencies?.turbo || dependencies?.turbo
+    const packageJson = await load(workingDirectory)
+
+    const turboMajorVersion =
+      packageJson.content.devDependencies?.turbo || packageJson.content.dependencies?.turbo
     debug(`Turbo major version from package.json: ${turboMajorVersion}`)
 
-    if (!turboMajorVersion) {
+    if (turboMajorVersion === undefined) {
       setFailed(
         `Couldn't find turbo dependency in root package.json. Please provide turbo-major-version as an input to the Github Action.`,
       )
