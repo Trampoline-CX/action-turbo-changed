@@ -6,6 +6,8 @@
 
 A Github Action making it easy to check if a local workspace changed using [Turborepo](https://turbo.build/).
 
+**:warning: Version 1 of this action will work only with Turborepo v1. Version 2 of this action will work with Turborepo version 1 and 2 (and should be updated to support versions above as well).**
+
 ## Prerequisites
 
 Since this Github Action relies on Turborepo, you'll need to have Turborepo set up in your repository before using this. Also, this action relies on the fact that you have a `build` pipeline configured as it makes use of `turbo run build --dry-run` behind the scenes.
@@ -31,7 +33,7 @@ jobs:
 
       - name: package-a changed in last commit?
         id: changedAction
-        uses: Trampoline-CX/action-turbo-changed@v1
+        uses: Trampoline-CX/action-turbo-changed@v2
         with:
           workspace: package-a
           from: HEAD^1 # Check for changes since previous commit (feel free to put a branch name instead in the form of origin/<branchName>)
@@ -48,13 +50,14 @@ jobs:
 
 The following options can be passed to customize the behavior of the action:
 
-| Option Name         | Description                                                                                          | Default Value |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
-| `workspace`         | **(Required)** The workspace name we are interested in.                                              | NA            |
-| `from`              | **(Required)** Start of the commit range to check (can be a commit hash, a branch name or `HEAD^1`). | NA            |
-| `to`                | End of the commit range to check (can be a commit hash or branch).                                   | `HEAD`        |
-| `working-directory` | Path to the root of the monorepo.                                                                    | `./`          |
-| `turbo-task-name`   | Name of the turborepo task to run                                                                    | `build`       |
+| Option Name           | Description                                                                                                                              | Default Value |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `workspace`           | **(Required)** The workspace name we are interested in.                                                                                  | NA            |
+| `from`                | **(Required)** Start of the commit range to check (can be a commit hash, a branch name or `HEAD^1`).                                     | NA            |
+| `to`                  | End of the commit range to check (can be a commit hash or branch).                                                                       | `HEAD`        |
+| `working-directory`   | Path to the root of the monorepo.                                                                                                        | `./`          |
+| `turbo-task-name`     | Name of the turborepo task to run                                                                                                        | `build`       |
+| `turbo-major-version` | Major version of the turbo package used. If not provided, the major version will be inferred from the version installed in package.json. | NA            |
 
 _:information_source: If using branch names, be sure to specify them as `origin/<branchName>`, as otherwise you'll be comparing to a local branch, which in most cases won't exist._
 
