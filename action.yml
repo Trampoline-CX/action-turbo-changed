@@ -23,11 +23,14 @@ inputs:
     required: false
     description: 'Name of the turbo task to run.'
     default: 'build'
+  turbo-major-version:
+    required: false
+    description: 'Major version of the turbo package used. If not provided, the major version will be inferred from the version installed in package.json.'
 outputs:
   changed:
     description: 'True if the workspace changed, otherwise false.'
   affectedWorkspaces:
     description: 'List of workspaces that were changed and for which the task needed to be run.'
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/index.js'

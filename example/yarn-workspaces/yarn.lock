@@ -2,8 +2,8 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 6
-  cacheKey: 8
+  version: 8
+  cacheKey: 10
 
 "package-a@workspace:packages/package-a":
   version: 0.0.0-use.local
@@ -65,12 +65,12 @@ __metadata:
   version: 1.12.0
   resolution: "turbo@npm:1.12.0"
   dependencies:
-    turbo-darwin-64: 1.12.0
-    turbo-darwin-arm64: 1.12.0
-    turbo-linux-64: 1.12.0
-    turbo-linux-arm64: 1.12.0
-    turbo-windows-64: 1.12.0
-    turbo-windows-arm64: 1.12.0
+    turbo-darwin-64: "npm:1.12.0"
+    turbo-darwin-arm64: "npm:1.12.0"
+    turbo-linux-64: "npm:1.12.0"
+    turbo-linux-arm64: "npm:1.12.0"
+    turbo-windows-64: "npm:1.12.0"
+    turbo-windows-arm64: "npm:1.12.0"
   dependenciesMeta:
     turbo-darwin-64:
       optional: true
@@ -86,7 +86,7 @@ __metadata:
       optional: true
   bin:
     turbo: bin/turbo
-  checksum: 2c79e7b40bc70749efe65acb569c3871227cc69ca49489bc4793e2105297de82c08158533bd6accb2e89f1b48dc3130a9a86c7f7e4c8738cf366516b9692ab74
+  checksum: 10/5aba15ff397f0f6afcef2f5796bbcf9e0a4f90a8db0348700a1eebe8297982a5d278bd26b2490acc0d5d52e5f764392452c6e92d5d34187339096bbbd8a0b3ee
   languageName: node
   linkType: hard
 
@@ -94,6 +94,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "yarn-workspaces@workspace:."
   dependencies:
-    turbo: 1.12.0
+    turbo: "npm:1.12.0"
   languageName: unknown
   linkType: soft

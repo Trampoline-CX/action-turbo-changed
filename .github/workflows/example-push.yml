@@ -26,7 +26,7 @@ jobs:
 
       - name: package-a changed in last commit?
         id: changedAction
-        uses: Trampoline-CX/action-turbo-changed@v1
+        uses: Trampoline-CX/action-turbo-changed@v2
         with:
           workspace: package-a
           from: HEAD^1 # Check for changes since previous commit (feel free to put a branch name instead)
