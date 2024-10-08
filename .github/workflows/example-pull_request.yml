@@ -11,7 +11,7 @@ defaults:
     working-directory: example/yarn-workspaces
 
 jobs:
-  build:
+  example-build-pr:
     runs-on: ubuntu-latest
     # You'll want to delete this "outputs" block in your workflow if you don't plan to use
     # the returned workspace names in a matrix job.
@@ -38,9 +38,9 @@ jobs:
         run: echo 'package-a changed!'
 
   # You'll want to delete this job if you don't plan to use the returned workspace names in a matrix job.
-  build-affected:
+  build-affected-pr:
     runs-on: ubuntu-latest
-    needs: build
+    needs: example-build-pr
     strategy:
       matrix:
         workspace: ${{ needs.build.outputs.affectedWorkspaces }}
