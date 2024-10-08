@@ -1,7 +1,5 @@
-import { execSync } from 'child_process'
-import { join } from 'path'
 import { getInput, debug, setFailed, setOutput } from '@actions/core'
-import * as github from '@actions/github'
+import { getTurboChangedWorkspaces, getTurboMajorVersion } from './turbo-helpers'
 
 const run = async (): Promise<void> => {
   try {
@@ -10,23 +8,25 @@ const run = async (): Promise<void> => {
     const from = getInput('from', { required: true })
     const to = getInput('to', { required: true })
     const workingDirectory = getInput('working-directory', { required: true })
+    const turboTaskName = getInput('turbo-task-name', { required: true })
 
-    debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory })}`)
+    const majorTurboVersion = await getTurboMajorVersion(workingDirectory)
 
-    const json = await execSync(
-      `npx turbo run build --filter="${workspace}...[${from}...${to}]" --dry-run=json`,
-      {
-        cwd: join(process.cwd(), workingDirectory),
-        encoding: 'utf-8',
-      },
-    )
+    if (!majorTurboVersion) return // Means that getting the version failed and threw an error
 
-    debug(`Output from Turborepo: ${json}`)
+    debug(`Inputs: ${JSON.stringify({ workspace, from, to, workingDirectory, turboTaskName })}`)
 
-    const parsedOutput = JSON.parse(json)
-    const changed = parsedOutput.packages.includes(workspace)
+    const { changed, affectedWorkspaces } = await getTurboChangedWorkspaces({
+      majorTurboVersion,
+      workspace,
+      from,
+      to,
+      workingDirectory,
+      turboTaskName,
+    })
 
     setOutput('changed', changed)
+    setOutput('affectedWorkspaces', affectedWorkspaces)
   } catch (error) {
     if (error instanceof Error || typeof error === 'string') {
       setFailed(error)
