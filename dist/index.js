@@ -116,7 +116,7 @@ const getTurboMajorVersion = (workingDirectory) => __awaiter(void 0, void 0, voi
     }
 });
 exports.getTurboMajorVersion = getTurboMajorVersion;
-const getTurboChangedWorkspaces = ({ majorTurboVersion, turboTaskName, workspace, from, to, workingDirectory, }) => __awaiter(void 0, void 0, void 0, function* () {
+const getTurboChangedWorkspaces = (_a) => __awaiter(void 0, [_a], void 0, function* ({ majorTurboVersion, turboTaskName, workspace, from, to, workingDirectory, }) {
     if (majorTurboVersion === 1) {
         const json = (0, child_process_1.execSync)(`TURBO_TELEMETRY_DISABLED=1 TURBO_TELEMETRY_MESSAGE_DISABLED=1 npx turbo@^1 run ${turboTaskName} --filter="${workspace}...[${from}...${to}]" --dry-run=json`, {
             cwd: (0, path_1.join)(process.cwd(), workingDirectory),
