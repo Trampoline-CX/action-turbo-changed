@@ -1259,9 +1259,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@npmcli/package-json@npm:6.0.1":
-  version: 6.0.1
-  resolution: "@npmcli/package-json@npm:6.0.1"
+"@npmcli/package-json@npm:6.1.0":
+  version: 6.1.0
+  resolution: "@npmcli/package-json@npm:6.1.0"
   dependencies:
     "@npmcli/git": "npm:^6.0.0"
     glob: "npm:^10.2.2"
@@ -1270,7 +1270,7 @@ __metadata:
     normalize-package-data: "npm:^7.0.0"
     proc-log: "npm:^5.0.0"
     semver: "npm:^7.5.3"
-  checksum: 10/88928fc8cbf2e4791574914239dcdc2066b9b6622583aa947de0e1293f77e622095df46b59326aefa67e1a8cdf62c8094ce2edcc841ebc535649972dee8816db
+  checksum: 10/c18de2f1c1787e512c87e0164cc978d3cf782d2c25f30ed6cc7942d22342de3902eaee0e4864d15f9e9362258c7fe9b261c775dfd6abc3fb53eed3b5fdeae594
   languageName: node
   linkType: hard
 
@@ -1665,7 +1665,7 @@ __metadata:
   resolution: "action-turbo-changed@workspace:."
   dependencies:
     "@actions/core": "npm:1.11.1"
-    "@npmcli/package-json": "npm:6.0.1"
+    "@npmcli/package-json": "npm:6.1.0"
     "@trampoline/eslint-config": "npm:1.8.0"
     "@types/node": "npm:22.10.0"
     "@types/npmcli__package-json": "npm:4.0.4"
