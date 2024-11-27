@@ -26,7 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@npmcli/package-json": "6.0.1",
+    "@npmcli/package-json": "6.1.0",
     "@types/npmcli__package-json": "4.0.4",
     "semver": "7.6.3"
   },
