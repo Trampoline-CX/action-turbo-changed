@@ -6629,6 +6629,7 @@ const updateScripts = __nccwpck_require__(2359)
 const updateWorkspaces = __nccwpck_require__(1261)
 const normalize = __nccwpck_require__(9228)
 const { read, parse } = __nccwpck_require__(6254)
+const { packageSort } = __nccwpck_require__(1343)
 
 // a list of handy specialized helper functions that take
 // care of special cases that are handled by the npm cli
@@ -6852,19 +6853,23 @@ class PackageJson {
     return this
   }
 
-  async save () {
+  async save ({ sort } = {}) {
     if (!this.#canSave) {
       throw new Error('No package.json to save to')
     }
     const {
       [Symbol.for('indent')]: indent,
       [Symbol.for('newline')]: newline,
+      ...rest
     } = this.content
 
     const format = indent === undefined ? '  ' : indent
     const eol = newline === undefined ? '\n' : newline
+
+    const content = sort ? packageSort(rest) : rest
+
     const fileContent = `${
-      JSON.stringify(this.content, null, format)
+      JSON.stringify(content, null, format)
     }\n`
       .replace(/\n/g, eol)
 
@@ -7565,6 +7570,114 @@ module.exports = {
   read,
   parse,
   readPackage,
+}
+
+
+/***/ }),
+
+/***/ 1343:
+/***/ ((module) => {
+
+/**
+ * arbitrary sort order for package.json largely pulled from:
+ * https://github.com/keithamus/sort-package-json/blob/main/defaultRules.md
+ *
+ * cross checked with:
+ * https://github.com/npm/types/blob/main/types/index.d.ts#L104
+ * https://docs.npmjs.com/cli/configuring-npm/package-json
+ */
+function packageSort (json) {
+  const {
+    name,
+    version,
+    private: isPrivate,
+    description,
+    keywords,
+    homepage,
+    bugs,
+    repository,
+    funding,
+    license,
+    author,
+    maintainers,
+    contributors,
+    type,
+    imports,
+    exports,
+    main,
+    browser,
+    types,
+    bin,
+    man,
+    directories,
+    files,
+    workspaces,
+    scripts,
+    config,
+    dependencies,
+    devDependencies,
+    peerDependencies,
+    peerDependenciesMeta,
+    optionalDependencies,
+    bundledDependencies,
+    bundleDependencies,
+    engines,
+    os,
+    cpu,
+    publishConfig,
+    devEngines,
+    licenses,
+    overrides,
+    ...rest
+  } = json
+
+  return {
+    ...(typeof name !== 'undefined' ? { name } : {}),
+    ...(typeof version !== 'undefined' ? { version } : {}),
+    ...(typeof isPrivate !== 'undefined' ? { private: isPrivate } : {}),
+    ...(typeof description !== 'undefined' ? { description } : {}),
+    ...(typeof keywords !== 'undefined' ? { keywords } : {}),
+    ...(typeof homepage !== 'undefined' ? { homepage } : {}),
+    ...(typeof bugs !== 'undefined' ? { bugs } : {}),
+    ...(typeof repository !== 'undefined' ? { repository } : {}),
+    ...(typeof funding !== 'undefined' ? { funding } : {}),
+    ...(typeof license !== 'undefined' ? { license } : {}),
+    ...(typeof author !== 'undefined' ? { author } : {}),
+    ...(typeof maintainers !== 'undefined' ? { maintainers } : {}),
+    ...(typeof contributors !== 'undefined' ? { contributors } : {}),
+    ...(typeof type !== 'undefined' ? { type } : {}),
+    ...(typeof imports !== 'undefined' ? { imports } : {}),
+    ...(typeof exports !== 'undefined' ? { exports } : {}),
+    ...(typeof main !== 'undefined' ? { main } : {}),
+    ...(typeof browser !== 'undefined' ? { browser } : {}),
+    ...(typeof types !== 'undefined' ? { types } : {}),
+    ...(typeof bin !== 'undefined' ? { bin } : {}),
+    ...(typeof man !== 'undefined' ? { man } : {}),
+    ...(typeof directories !== 'undefined' ? { directories } : {}),
+    ...(typeof files !== 'undefined' ? { files } : {}),
+    ...(typeof workspaces !== 'undefined' ? { workspaces } : {}),
+    ...(typeof scripts !== 'undefined' ? { scripts } : {}),
+    ...(typeof config !== 'undefined' ? { config } : {}),
+    ...(typeof dependencies !== 'undefined' ? { dependencies } : {}),
+    ...(typeof devDependencies !== 'undefined' ? { devDependencies } : {}),
+    ...(typeof peerDependencies !== 'undefined' ? { peerDependencies } : {}),
+    ...(typeof peerDependenciesMeta !== 'undefined' ? { peerDependenciesMeta } : {}),
+    ...(typeof optionalDependencies !== 'undefined' ? { optionalDependencies } : {}),
+    ...(typeof bundledDependencies !== 'undefined' ? { bundledDependencies } : {}),
+    ...(typeof bundleDependencies !== 'undefined' ? { bundleDependencies } : {}),
+    ...(typeof engines !== 'undefined' ? { engines } : {}),
+    ...(typeof os !== 'undefined' ? { os } : {}),
+    ...(typeof cpu !== 'undefined' ? { cpu } : {}),
+    ...(typeof publishConfig !== 'undefined' ? { publishConfig } : {}),
+    ...(typeof devEngines !== 'undefined' ? { devEngines } : {}),
+    ...(typeof licenses !== 'undefined' ? { licenses } : {}),
+    ...(typeof overrides !== 'undefined' ? { overrides } : {}),
+    ...rest,
+  }
+}
+
+module.exports = {
+  packageSort,
 }
 
 
