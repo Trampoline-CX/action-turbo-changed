@@ -36,7 +36,7 @@ export const getTurboMajorVersion = async (
       return false
     }
     major = semver.coerce(turboMajorVersion)?.major
-    if (!major) {
+    if (major === null) {
       setFailed(`Couldn't parse turbo major version from package.json: ${turboMajorVersion}`)
       return false
     }
