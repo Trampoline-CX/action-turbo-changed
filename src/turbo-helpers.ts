@@ -17,7 +17,7 @@ export const getTurboMajorVersion = async (
   workingDirectory: string,
 ): Promise<TurboVersion | false> => {
   let turboMajorVersion: string | undefined = getInput('turbo-major-version', { required: false })
-  let major: number
+  let major: number | undefined
   debug(`Turbo major version from input: ${turboMajorVersion}`)
 
   if (!turboMajorVersion) {
@@ -36,12 +36,13 @@ export const getTurboMajorVersion = async (
       return false
     }
     major = semver.coerce(turboMajorVersion)?.major
-    if (major === null) {
-      setFailed(`Couldn't parse turbo major version from package.json: ${turboMajorVersion}`)
-      return false
-    }
   } else {
     major = parseInt(turboMajorVersion)
+  }
+
+  if (typeof major !== 'number') {
+    setFailed(`Couldn't parse turbo major version from package.json: ${turboMajorVersion}`)
+    return false
   }
 
   if (major < 1 || major > 2) {
