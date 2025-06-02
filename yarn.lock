@@ -1442,12 +1442,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:22.15.28":
-  version: 22.15.28
-  resolution: "@types/node@npm:22.15.28"
+"@types/node@npm:22.15.29":
+  version: 22.15.29
+  resolution: "@types/node@npm:22.15.29"
   dependencies:
     undici-types: "npm:~6.21.0"
-  checksum: 10/82ee399642729755f09aa59284f4ecf155451a39d268fd1c1f464aed9e1107842753cecab2058ad5f322a5487e534c1d7abe50801106f8844e74f0d1463dddc3
+  checksum: 10/3426790c5aa22df445213d7f37e57ea261cf3013030fe9b3025d87c302097799a9db3b848e2a9bdb07cab8ec6c7e9947ac770cf11e12e420148296b63d63e7db
   languageName: node
   linkType: hard
 
@@ -1667,7 +1667,7 @@ __metadata:
     "@actions/core": "npm:1.11.1"
     "@npmcli/package-json": "npm:6.2.0"
     "@trampoline/eslint-config": "npm:1.8.0"
-    "@types/node": "npm:22.15.28"
+    "@types/node": "npm:22.15.29"
     "@types/npmcli__package-json": "npm:4.0.4"
     "@vercel/ncc": "npm:0.38.3"
     eslint: "npm:8.57.1"
