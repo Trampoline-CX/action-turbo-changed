@@ -1881,7 +1881,7 @@ __metadata:
     js-yaml: "npm:^4.1.0"
     prettier: "npm:3.6.2"
     semver: "npm:7.7.2"
-    ts-jest: "npm:^29.4.3"
+    ts-jest: "npm:^29.4.4"
     typescript: "npm:5.9.2"
   languageName: unknown
   linkType: soft
@@ -6264,9 +6264,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ts-jest@npm:^29.4.3":
-  version: 29.4.3
-  resolution: "ts-jest@npm:29.4.3"
+"ts-jest@npm:^29.4.4":
+  version: 29.4.4
+  resolution: "ts-jest@npm:29.4.4"
   dependencies:
     bs-logger: "npm:^0.2.6"
     fast-json-stable-stringify: "npm:^2.1.0"
@@ -6300,7 +6300,7 @@ __metadata:
       optional: true
   bin:
     ts-jest: cli.js
-  checksum: 10/818bf5ffca88f5a61651a7da1f98442218183b93d0804479ef9c4609d5b54c001a9dcb1d964d70779fb974e75a7a22a5914d7af00a5f52d009d3e24bf8c2c10c
+  checksum: 10/759913fdb9795416abe918ba41c2ab3865f796f909d22bbf219a6a6c5e7daecad06ad85ecc905ea1af89fde2eb048c3b981493dfad6e3a21f7d5c602e630d34d
   languageName: node
   linkType: hard
 
