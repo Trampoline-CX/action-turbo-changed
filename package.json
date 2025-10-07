@@ -28,7 +28,7 @@
     "@actions/core": "1.11.1",
     "@npmcli/package-json": "6.2.0",
     "@types/npmcli__package-json": "4.0.4",
-    "semver": "7.7.2"
+    "semver": "7.7.3"
   },
   "devDependencies": {
     "@trampoline/eslint-config": "1.8.0",
