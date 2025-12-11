@@ -25,7 +25,7 @@
   "author": "Trampoline",
   "license": "MIT",
   "dependencies": {
-    "@actions/core": "1.11.1",
+    "@actions/core": "2.0.1",
     "@npmcli/package-json": "7.0.4",
     "@types/npmcli__package-json": "4.0.4",
     "semver": "7.7.3"
