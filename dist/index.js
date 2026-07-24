@@ -3806,16 +3806,14 @@ module.exports.loadGitConfig = loadGitConfig
 /***/ 9694:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-const pinflight = __nccwpck_require__(876)
 const spawn = __nccwpck_require__(153)
 const { LRUCache } = __nccwpck_require__(2477)
+const linesToRevs = __nccwpck_require__(2914)
 
 const revsCache = new LRUCache({
   max: 100,
   ttl: 5 * 60 * 1000,
 })
-
-const linesToRevs = __nccwpck_require__(2914)
 
 module.exports = async (repo, opts = {}) => {
   if (!opts.noGitRevCache) {
@@ -3825,14 +3823,10 @@ module.exports = async (repo, opts = {}) => {
     }
   }
 
-  return pinflight(`ls-remote:${repo}`, () =>
-    spawn(['ls-remote', repo], opts)
-      .then(({ stdout }) => linesToRevs(stdout.trim().split('\n')))
-      .then(revs => {
-        revsCache.set(repo, revs)
-        return revs
-      })
-  )
+  const { stdout } = await spawn(['ls-remote', repo], opts)
+  const revs = linesToRevs(stdout.trim().split('\n'))
+  revsCache.set(repo, revs)
+  return revs
 }
 
 
@@ -6631,7 +6625,7 @@ const parseJSON = __nccwpck_require__(7348)
 const updateDeps = __nccwpck_require__(7766)
 const updateScripts = __nccwpck_require__(2359)
 const updateWorkspaces = __nccwpck_require__(1261)
-const normalize = __nccwpck_require__(9228)
+const { normalize, syncNormalize } = __nccwpck_require__(9228)
 const { read, parse } = __nccwpck_require__(6254)
 const { packageSort } = __nccwpck_require__(1343)
 
@@ -6651,6 +6645,18 @@ const knownKeys = new Set([
 ])
 
 class PackageJson {
+  // npm pkg fix
+  static fixSteps = Object.freeze([
+    'binRefs',
+    'bundleDependencies',
+    'fixName',
+    'fixVersionField',
+    'fixRepositoryField',
+    'fixDependencies',
+    'devDependencies',
+    'scriptpath',
+  ])
+
   static normalizeSteps = Object.freeze([
     '_id',
     '_attributes',
@@ -6660,19 +6666,7 @@ class PackageJson {
     'scripts',
     'funding',
     'bin',
-  ])
-
-  // npm pkg fix
-  static fixSteps = Object.freeze([
-    'binRefs',
-    'bundleDependencies',
-    'bundleDependenciesFalse',
-    'fixNameField',
-    'fixVersionField',
-    'fixRepositoryField',
-    'fixDependencies',
-    'devDependencies',
-    'scriptpath',
+    'binDir',
   ])
 
   static prepareSteps = Object.freeze([
@@ -6789,7 +6783,11 @@ class PackageJson {
     return this
   }
 
+  // Manually set data from an existing object
   fromContent (data) {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Content data must be an object')
+    }
     this.#manifest = data
     this.#canSave = false
     return this
@@ -6847,7 +6845,7 @@ class PackageJson {
       this.#manifest = step({ content, originalContent: this.content })
     }
 
-    // unknown properties will just be overwitten
+    // unknown properties will just be overwritten
     for (const [key, value] of Object.entries(content)) {
       if (!knownKeys.has(key)) {
         this.content[key] = value
@@ -6884,6 +6882,13 @@ class PackageJson {
     }
   }
 
+  // steps is NOT overrideable here because this is a legacy function that's not being used in new places
+  syncNormalize (opts = {}) {
+    opts.steps = this.constructor.normalizeSteps.filter(s => s !== '_attributes')
+    syncNormalize(this, opts)
+    return this
+  }
+
   async normalize (opts = {}) {
     if (!opts.steps) {
       opts.steps = this.constructor.normalizeSteps
@@ -6913,14 +6918,48 @@ module.exports = PackageJson
 
 /***/ }),
 
-/***/ 2830:
+/***/ 9668:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// This is an implementation of the validForNewPackage flag in validate-npm-package-license, which is no longer maintained
+
+const parse = __nccwpck_require__(6495)
+
+function usesLicenseRef (ast) {
+  if (Object.hasOwn(ast, 'license')) {
+    return ast.license.startsWith('LicenseRef') || ast.license.startsWith('DocumentRef')
+  } else {
+    return usesLicenseRef(ast.left) || usesLicenseRef(ast.right)
+  }
+}
+
+// license should be a valid SPDX license expression (without "LicenseRef"), "UNLICENSED", or "SEE LICENSE IN <filename>"
+module.exports = function licenseValidForNewPackage (argument) {
+  if (argument === 'UNLICENSED' || argument === 'UNLICENCED') {
+    return true
+  }
+  if (/^SEE LICEN[CS]E IN ./.test(argument)) {
+    return true
+  }
+  try {
+    const ast = parse(argument)
+    return !usesLicenseRef(ast)
+  } catch {
+    return false
+  }
+}
+
+
+/***/ }),
+
+/***/ 449:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 // Originally normalize-package-data
 
-const url = __nccwpck_require__(3136)
+const { URL } = __nccwpck_require__(3136)
 const hostedGitInfo = __nccwpck_require__(2537)
-const validateLicense = __nccwpck_require__(6821)
+const validateLicense = __nccwpck_require__(9668)
 
 const typos = {
   dependancies: 'dependencies',
@@ -7041,8 +7080,7 @@ function normalizeData (data, changes) {
     if (typeof data.bugs === 'string') {
       if (isEmail(data.bugs)) {
         data.bugs = { email: data.bugs }
-        /* eslint-disable-next-line node/no-deprecated-api */
-      } else if (url.parse(data.bugs).protocol) {
+      } else if (URL.canParse(data.bugs)) {
         data.bugs = { url: data.bugs }
       } else {
         changes?.push(`Bug string field must be url, email, or {email,url}`)
@@ -7058,8 +7096,7 @@ function normalizeData (data, changes) {
       const oldBugs = data.bugs
       data.bugs = {}
       if (oldBugs.url) {
-        /* eslint-disable-next-line node/no-deprecated-api */
-        if (typeof (oldBugs.url) === 'string' && url.parse(oldBugs.url).protocol) {
+        if (URL.canParse(oldBugs.url)) {
           data.bugs.url = oldBugs.url
         } else {
           changes?.push('bugs.url field must be a string url. Deleted.')
@@ -7134,8 +7171,7 @@ function normalizeData (data, changes) {
       changes?.push('homepage field must be a string url. Deleted.')
       delete data.homepage
     } else {
-      /* eslint-disable-next-line node/no-deprecated-api */
-      if (!url.parse(data.homepage).protocol) {
+      if (!URL.canParse(data.homepage)) {
         data.homepage = 'http://' + data.homepage
       }
     }
@@ -7151,7 +7187,7 @@ function normalizeData (data, changes) {
     changes?.push('No license field.')
   } else if (typeof (license) !== 'string' || license.length < 1 || license.trim() === '') {
     changes?.push('license should be a valid SPDX license expression')
-  } else if (!validateLicense(license).validForNewPackages) {
+  } else if (!validateLicense(license)) {
     changes?.push('license should be a valid SPDX license expression')
   }
   // fixPeople
@@ -7185,6 +7221,7 @@ const clean = __nccwpck_require__(576)
 const fs = __nccwpck_require__(1455)
 const path = __nccwpck_require__(6760)
 const { log } = __nccwpck_require__(6687)
+const moduleBuiltin = __nccwpck_require__(8995)
 
 /**
  * @type {import('hosted-git-info')}
@@ -7248,7 +7285,7 @@ function normalizePackageBin (pkg, changes) {
           changes?.push(`"bin[${binKey}]" was renamed to "bin[${base}]"`)
         }
         if (binTarget !== pkg.bin[binKey]) {
-          changes?.push(`"bin[${base}]" script name was cleaned`)
+          changes?.push(`"bin[${base}]" script name ${binTarget} was invalid and removed`)
         }
         pkg.bin[base] = binTarget
       }
@@ -7314,19 +7351,13 @@ function secureAndUnixifyPath (ref) {
   return secured.startsWith('./') ? '' : secured
 }
 
-// We don't want the `changes` array in here by default because this is a hot
-// path for parsing packuments during install.  So the calling method passes it
-// in if it wants to track changes.
-const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase }) => {
-  if (!pkg.content) {
-    throw new Error('Can not normalize without content')
-  }
+// Only steps that can be ran synchronously.  There are some object constructors (i.e. Aborist Node) that need synchronous normalization so here we are.
+function syncSteps (pkg, { strict, steps, changes, allowLegacyCase }) {
   const data = pkg.content
-  const scripts = data.scripts || {}
   const pkgId = `${data.name ?? ''}@${data.version ?? ''}`
 
   // name and version are load bearing so we have to clean them up first
-  if (steps.includes('fixNameField') || steps.includes('normalizeData')) {
+  if (steps.includes('fixName') || steps.includes('fixNameField') || steps.includes('normalizeData')) {
     if (!data.name && !strict) {
       changes?.push('Missing "name" field was set to an empty string')
       data.name = ''
@@ -7352,6 +7383,13 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
     }
   }
 
+  if (steps.includes('fixName')) {
+    // Check for conflicts with builtin modules
+    if (moduleBuiltin.builtinModules.includes(data.name)) {
+      log.warn('package-json', pkgId, `Package name "${data.name}" conflicts with a Node.js built-in module name`)
+    }
+  }
+
   if (steps.includes('fixVersionField') || steps.includes('normalizeData')) {
     // allow "loose" semver 1.0 versions in non-strict mode
     // enforce strict semver 2.0 compliance in strict mode
@@ -7369,6 +7407,7 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
       }
     }
   }
+
   // remove attributes that start with "_"
   if (steps.includes('_attributes')) {
     for (const key in data) {
@@ -7388,14 +7427,14 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
   }
 
   // fix bundledDependencies typo
-  // normalize bundleDependencies
   if (steps.includes('bundledDependencies')) {
     if (data.bundleDependencies === undefined && data.bundledDependencies !== undefined) {
       data.bundleDependencies = data.bundledDependencies
+      changes?.push(`Deleted incorrect "bundledDependencies"`)
     }
-    changes?.push(`Deleted incorrect "bundledDependencies"`)
     delete data.bundledDependencies
   }
+
   // expand "bundleDependencies: true or translate from object"
   if (steps.includes('bundleDependencies')) {
     const bd = data.bundleDependencies
@@ -7434,32 +7473,6 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
     }
   }
 
-  // add "install" attribute if any "*.gyp" files exist
-  if (steps.includes('gypfile')) {
-    if (!scripts.install && !scripts.preinstall && data.gypfile !== false) {
-      const files = await lazyLoadGlob()('*.gyp', { cwd: pkg.path })
-      if (files.length) {
-        scripts.install = 'node-gyp rebuild'
-        data.scripts = scripts
-        data.gypfile = true
-        changes?.push(`"scripts.install" was set to "node-gyp rebuild"`)
-        changes?.push(`"gypfile" was set to "true"`)
-      }
-    }
-  }
-
-  // add "start" attribute if "server.js" exists
-  if (steps.includes('serverjs') && !scripts.start) {
-    try {
-      await fs.access(path.join(pkg.path, 'server.js'))
-      scripts.start = 'node server.js'
-      data.scripts = scripts
-      changes?.push('"scripts.start" was set to "node server.js"')
-    } catch {
-      // do nothing
-    }
-  }
-
   // strip "node_modules/.bin" from scripts entries
   // remove invalid scripts entries (non-strings)
   if ((steps.includes('scripts') || steps.includes('scriptpath')) && data.scripts !== undefined) {
@@ -7484,179 +7497,6 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
     if (data.funding && typeof data.funding === 'string') {
       data.funding = { url: data.funding }
       changes?.push(`"funding" was changed to an object with a url attribute`)
-    }
-  }
-
-  // populate "authors" attribute
-  if (steps.includes('authors') && !data.contributors) {
-    try {
-      const authorData = await fs.readFile(path.join(pkg.path, 'AUTHORS'), 'utf8')
-      const authors = authorData.split(/\r?\n/g)
-        .map(line => line.replace(/^\s*#.*$/, '').trim())
-        .filter(line => line)
-      data.contributors = authors
-      changes?.push('"contributors" was auto-populated with the contents of the "AUTHORS" file')
-    } catch {
-      // do nothing
-    }
-  }
-
-  // populate "readme" attribute
-  if (steps.includes('readme') && !data.readme) {
-    const mdre = /\.m?a?r?k?d?o?w?n?$/i
-    const files = await lazyLoadGlob()('{README,README.*}', {
-      cwd: pkg.path,
-      nocase: true,
-      mark: true,
-    })
-    let readmeFile
-    for (const file of files) {
-      // don't accept directories.
-      if (!file.endsWith(path.sep)) {
-        if (file.match(mdre)) {
-          readmeFile = file
-          break
-        }
-        if (file.endsWith('README')) {
-          readmeFile = file
-        }
-      }
-    }
-    if (readmeFile) {
-      const readmeData = await fs.readFile(path.join(pkg.path, readmeFile), 'utf8')
-      data.readme = readmeData
-      data.readmeFilename = readmeFile
-      changes?.push(`"readme" was set to the contents of ${readmeFile}`)
-      changes?.push(`"readmeFilename" was set to ${readmeFile}`)
-    }
-    if (!data.readme) {
-      data.readme = 'ERROR: No README data found!'
-    }
-  }
-
-  // expand directories.man
-  if (steps.includes('mans')) {
-    if (data.directories?.man && !data.man) {
-      const manDir = secureAndUnixifyPath(data.directories.man)
-      const cwd = path.resolve(pkg.path, manDir)
-      const files = await lazyLoadGlob()('**/*.[0-9]', { cwd })
-      data.man = files.map(man =>
-        path.relative(pkg.path, path.join(cwd, man)).split(path.sep).join('/')
-      )
-    }
-    normalizePackageMan(data, changes)
-  }
-
-  if (steps.includes('bin') || steps.includes('binDir') || steps.includes('binRefs')) {
-    normalizePackageBin(data, changes)
-  }
-
-  // expand "directories.bin"
-  if (steps.includes('binDir') && data.directories?.bin && !data.bin) {
-    const binsDir = path.resolve(pkg.path, secureAndUnixifyPath(data.directories.bin))
-    const bins = await lazyLoadGlob()('**', { cwd: binsDir })
-    data.bin = bins.reduce((acc, binFile) => {
-      if (binFile && !binFile.startsWith('.')) {
-        const binName = path.basename(binFile)
-        acc[binName] = path.join(data.directories.bin, binFile)
-      }
-      return acc
-    }, {})
-    // *sigh*
-    normalizePackageBin(data, changes)
-  }
-
-  // populate "gitHead" attribute
-  if (steps.includes('gitHead') && !data.gitHead) {
-    const git = __nccwpck_require__(9298)
-    const gitRoot = await git.find({ cwd: pkg.path, root })
-    let head
-    if (gitRoot) {
-      try {
-        head = await fs.readFile(path.resolve(gitRoot, '.git/HEAD'), 'utf8')
-      } catch (err) {
-      // do nothing
-      }
-    }
-    let headData
-    if (head) {
-      if (head.startsWith('ref: ')) {
-        const headRef = head.replace(/^ref: /, '').trim()
-        const headFile = path.resolve(gitRoot, '.git', headRef)
-        try {
-          headData = await fs.readFile(headFile, 'utf8')
-          headData = headData.replace(/^ref: /, '').trim()
-        } catch (err) {
-          // do nothing
-        }
-        if (!headData) {
-          const packFile = path.resolve(gitRoot, '.git/packed-refs')
-          try {
-            let refs = await fs.readFile(packFile, 'utf8')
-            if (refs) {
-              refs = refs.split('\n')
-              for (let i = 0; i < refs.length; i++) {
-                const match = refs[i].match(/^([0-9a-f]{40}) (.+)$/)
-                if (match && match[2].trim() === headRef) {
-                  headData = match[1]
-                  break
-                }
-              }
-            }
-          } catch {
-            // do nothing
-          }
-        }
-      } else {
-        headData = head.trim()
-      }
-    }
-    if (headData) {
-      data.gitHead = headData
-    }
-  }
-
-  // populate "types" attribute
-  if (steps.includes('fillTypes')) {
-    const index = data.main || 'index.js'
-
-    if (typeof index !== 'string') {
-      throw new TypeError('The "main" attribute must be of type string.')
-    }
-
-    // TODO exports is much more complicated than this in verbose format
-    // We need to support for instance
-
-    // "exports": {
-    //   ".": [
-    //     {
-    //       "default": "./lib/npm.js"
-    //     },
-    //     "./lib/npm.js"
-    //   ],
-    //   "./package.json": "./package.json"
-    // },
-    // as well as conditional exports
-
-    // if (data.exports && typeof data.exports === 'string') {
-    //   index = data.exports
-    // }
-
-    // if (data.exports && data.exports['.']) {
-    //   index = data.exports['.']
-    //   if (typeof index !== 'string') {
-    //   }
-    // }
-    const extless = path.join(path.dirname(index), path.basename(index, path.extname(index)))
-    const dts = `./${extless}.d.ts`
-    const hasDTSFields = 'types' in data || 'typings' in data
-    if (!hasDTSFields) {
-      try {
-        await fs.access(path.join(pkg.path, dts))
-        data.types = dts.split(path.sep).join('/')
-      } catch {
-        // do nothing
-      }
     }
   }
 
@@ -7754,8 +7594,211 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
 
   // TODO some of this is duplicated in other steps here, a future breaking change may be able to remove the duplicates involved in this step
   if (steps.includes('normalizeData')) {
-    const { normalizeData } = __nccwpck_require__(2830)
+    const { normalizeData } = __nccwpck_require__(449)
     normalizeData(data, changes)
+  }
+}
+
+// Steps that require await, distinct from sync-steps.js
+async function asyncSteps (pkg, { steps, root, changes }) {
+  const data = pkg.content
+  const scripts = data.scripts || {}
+  const pkgId = `${data.name ?? ''}@${data.version ?? ''}`
+
+  // add "install" attribute if any "*.gyp" files exist
+  if (steps.includes('gypfile')) {
+    if (!scripts.install && !scripts.preinstall && data.gypfile !== false) {
+      const files = await lazyLoadGlob()('*.gyp', { cwd: pkg.path })
+      if (files.length) {
+        scripts.install = 'node-gyp rebuild'
+        data.scripts = scripts
+        data.gypfile = true
+        changes?.push(`"scripts.install" was set to "node-gyp rebuild"`)
+        changes?.push(`"gypfile" was set to "true"`)
+      }
+    }
+  }
+
+  // add "start" attribute if "server.js" exists
+  if (steps.includes('serverjs') && !scripts.start) {
+    try {
+      await fs.access(path.join(pkg.path, 'server.js'))
+      scripts.start = 'node server.js'
+      data.scripts = scripts
+      changes?.push('"scripts.start" was set to "node server.js"')
+    } catch {
+      // do nothing
+    }
+  }
+
+  // populate "authors" attribute
+  if (steps.includes('authors') && !data.contributors) {
+    try {
+      const authorData = await fs.readFile(path.join(pkg.path, 'AUTHORS'), 'utf8')
+      const authors = authorData.split(/\r?\n/g)
+        .map(line => line.replace(/^\s*#.*$/, '').trim())
+        .filter(line => line)
+      data.contributors = authors
+      changes?.push('"contributors" was auto-populated with the contents of the "AUTHORS" file')
+    } catch {
+      // do nothing
+    }
+  }
+
+  // populate "readme" attribute
+  if (steps.includes('readme') && !data.readme) {
+    const mdre = /\.m?a?r?k?d?o?w?n?$/i
+    const files = await lazyLoadGlob()('{README,README.*}', {
+      cwd: pkg.path,
+      nocase: true,
+      mark: true,
+    })
+    let readmeFile
+    for (const file of files) {
+      // don't accept directories.
+      if (!file.endsWith(path.sep)) {
+        if (file.match(mdre)) {
+          readmeFile = file
+          break
+        }
+        if (file.endsWith('README')) {
+          readmeFile = file
+        }
+      }
+    }
+    if (readmeFile) {
+      const readmeData = await fs.readFile(path.join(pkg.path, readmeFile), 'utf8')
+      data.readme = readmeData
+      data.readmeFilename = readmeFile
+      changes?.push(`"readme" was set to the contents of ${readmeFile}`)
+      changes?.push(`"readmeFilename" was set to ${readmeFile}`)
+    }
+    if (!data.readme) {
+      data.readme = 'ERROR: No README data found!'
+    }
+  }
+
+  // expand directories.man
+  if (steps.includes('mans')) {
+    if (data.directories?.man && !data.man) {
+      const manDir = secureAndUnixifyPath(data.directories.man)
+      const cwd = path.resolve(pkg.path, manDir)
+      const files = await lazyLoadGlob()('**/*.[0-9]', { cwd })
+      data.man = files.map(man =>
+        path.relative(pkg.path, path.join(cwd, man)).split(path.sep).join('/')
+      )
+    }
+    normalizePackageMan(data, changes)
+  }
+
+  // expand "directories.bin"
+  if (steps.includes('binDir') && data.directories?.bin && !data.bin && pkg.path) {
+    const binPath = secureAndUnixifyPath(data.directories.bin)
+    const bins = await lazyLoadGlob()('**', { cwd: path.resolve(pkg.path, binPath) })
+    data.bin = bins.reduce((acc, binFile) => {
+      if (binFile && !binFile.startsWith('.')) {
+        const binName = path.basename(binFile)
+        // binPath is already cleaned and unixified, no need to path.join here.
+        acc[binName] = `${binPath}/${secureAndUnixifyPath(binFile)}`
+      }
+      return acc
+    }, {})
+  } else if (steps.includes('bin') || steps.includes('binDir') || steps.includes('binRefs')) {
+    normalizePackageBin(data, changes)
+  }
+
+  // populate "gitHead" attribute
+  if (steps.includes('gitHead') && !data.gitHead) {
+    const git = __nccwpck_require__(9298)
+    const gitRoot = await git.find({ cwd: pkg.path, root })
+    let head
+    if (gitRoot) {
+      try {
+        head = await fs.readFile(path.resolve(gitRoot, '.git/HEAD'), 'utf8')
+      } catch (err) {
+      // do nothing
+      }
+    }
+    let headData
+    if (head) {
+      if (head.startsWith('ref: ')) {
+        const headRef = head.replace(/^ref: /, '').trim()
+        const headFile = path.resolve(gitRoot, '.git', headRef)
+        try {
+          headData = await fs.readFile(headFile, 'utf8')
+          headData = headData.replace(/^ref: /, '').trim()
+        } catch (err) {
+          // do nothing
+        }
+        if (!headData) {
+          const packFile = path.resolve(gitRoot, '.git/packed-refs')
+          try {
+            let refs = await fs.readFile(packFile, 'utf8')
+            if (refs) {
+              refs = refs.split('\n')
+              for (let i = 0; i < refs.length; i++) {
+                const match = refs[i].match(/^([0-9a-f]{40}) (.+)$/)
+                if (match && match[2].trim() === headRef) {
+                  headData = match[1]
+                  break
+                }
+              }
+            }
+          } catch {
+            // do nothing
+          }
+        }
+      } else {
+        headData = head.trim()
+      }
+    }
+    if (headData) {
+      data.gitHead = headData
+    }
+  }
+
+  // populate "types" attribute
+  if (steps.includes('fillTypes')) {
+    const index = data.main || 'index.js'
+
+    if (typeof index !== 'string') {
+      throw new TypeError('The "main" attribute must be of type string.')
+    }
+
+    // TODO exports is much more complicated than this in verbose format
+    // We need to support for instance
+
+    // "exports": {
+    //   ".": [
+    //     {
+    //       "default": "./lib/npm.js"
+    //     },
+    //     "./lib/npm.js"
+    //   ],
+    //   "./package.json": "./package.json"
+    // },
+    // as well as conditional exports
+
+    // if (data.exports && typeof data.exports === 'string') {
+    //   index = data.exports
+    // }
+
+    // if (data.exports && data.exports['.']) {
+    //   index = data.exports['.']
+    //   if (typeof index !== 'string') {
+    //   }
+    // }
+    const extless = path.join(path.dirname(index), path.basename(index, path.extname(index)))
+    const dts = `./${extless}.d.ts`
+    const hasDTSFields = 'types' in data || 'typings' in data
+    if (!hasDTSFields) {
+      try {
+        await fs.access(path.join(pkg.path, dts))
+        data.types = dts.split(path.sep).join('/')
+      } catch {
+        // do nothing
+      }
+    }
   }
 
   // Warn if the bin references don't point to anything.  This might be better
@@ -7772,7 +7815,21 @@ const normalize = async (pkg, { strict, steps, root, changes, allowLegacyCase })
   }
 }
 
-module.exports = normalize
+// We don't want the `changes` array in here by default because this is a hot path for parsing packuments during install.  The calling method passes it in if it wants to track changes.
+async function normalize (pkg, opts) {
+  if (!pkg.content) {
+    throw new Error('Can not normalize without content')
+  }
+  await asyncSteps(pkg, opts)
+  // the normalizeData part of this needs to be the last thing ran, so sync comes second
+  syncSteps(pkg, opts)
+}
+
+function syncNormalize (pkg, opts) {
+  syncSteps(pkg, opts)
+}
+
+module.exports = { normalize, syncNormalize }
 
 
 /***/ }),
@@ -8774,13 +8831,313 @@ createToken('GTE0PRE', '^\\s*>=\\s*0\\.0\\.0-0\\s*$')
 
 /***/ }),
 
+/***/ 6495:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+var scan = __nccwpck_require__(654)
+var parse = __nccwpck_require__(2600)
+
+module.exports = function (source) {
+  return parse(scan(source))
+}
+
+
+/***/ }),
+
+/***/ 2600:
+/***/ ((module) => {
+
+"use strict";
+
+
+// The ABNF grammar in the spec is totally ambiguous.
+//
+// This parser follows the operator precedence defined in the
+// `Order of Precedence and Parentheses` section.
+
+module.exports = function (tokens) {
+  var index = 0
+
+  function hasMore () {
+    return index < tokens.length
+  }
+
+  function token () {
+    return hasMore() ? tokens[index] : null
+  }
+
+  function next () {
+    if (!hasMore()) {
+      throw new Error()
+    }
+    index++
+  }
+
+  function parseOperator (operator) {
+    var t = token()
+    if (t && t.type === 'OPERATOR' && operator === t.string) {
+      next()
+      return t.string
+    }
+  }
+
+  function parseWith () {
+    if (parseOperator('WITH')) {
+      var t = token()
+      if (t && t.type === 'EXCEPTION') {
+        next()
+        return t.string
+      }
+      throw new Error('Expected exception after `WITH`')
+    }
+  }
+
+  function parseLicenseRef () {
+    // TODO: Actually, everything is concatenated into one string
+    // for backward-compatibility but it could be better to return
+    // a nice structure.
+    var begin = index
+    var string = ''
+    var t = token()
+    if (t.type === 'DOCUMENTREF') {
+      next()
+      string += 'DocumentRef-' + t.string + ':'
+      if (!parseOperator(':')) {
+        throw new Error('Expected `:` after `DocumentRef-...`')
+      }
+    }
+    t = token()
+    if (t.type === 'LICENSEREF') {
+      next()
+      string += 'LicenseRef-' + t.string
+      return { license: string }
+    }
+    index = begin
+  }
+
+  function parseLicense () {
+    var t = token()
+    if (t && t.type === 'LICENSE') {
+      next()
+      var node = { license: t.string }
+      if (parseOperator('+')) {
+        node.plus = true
+      }
+      var exception = parseWith()
+      if (exception) {
+        node.exception = exception
+      }
+      return node
+    }
+  }
+
+  function parseParenthesizedExpression () {
+    var left = parseOperator('(')
+    if (!left) {
+      return
+    }
+
+    var expr = parseExpression()
+
+    if (!parseOperator(')')) {
+      throw new Error('Expected `)`')
+    }
+
+    return expr
+  }
+
+  function parseAtom () {
+    return (
+      parseParenthesizedExpression() ||
+      parseLicenseRef() ||
+      parseLicense()
+    )
+  }
+
+  function makeBinaryOpParser (operator, nextParser) {
+    return function parseBinaryOp () {
+      var left = nextParser()
+      if (!left) {
+        return
+      }
+
+      if (!parseOperator(operator)) {
+        return left
+      }
+
+      var right = parseBinaryOp()
+      if (!right) {
+        throw new Error('Expected expression')
+      }
+      return {
+        left: left,
+        conjunction: operator.toLowerCase(),
+        right: right
+      }
+    }
+  }
+
+  var parseAnd = makeBinaryOpParser('AND', parseAtom)
+  var parseExpression = makeBinaryOpParser('OR', parseAnd)
+
+  var node = parseExpression()
+  if (!node || hasMore()) {
+    throw new Error('Syntax error')
+  }
+  return node
+}
+
+
+/***/ }),
+
+/***/ 654:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+var licenses = []
+  .concat(__nccwpck_require__(5204))
+  .concat(__nccwpck_require__(3389))
+var exceptions = __nccwpck_require__(3988)
+
+module.exports = function (source) {
+  var index = 0
+
+  function hasMore () {
+    return index < source.length
+  }
+
+  // `value` can be a regexp or a string.
+  // If it is recognized, the matching source string is returned and
+  // the index is incremented. Otherwise `undefined` is returned.
+  function read (value) {
+    if (value instanceof RegExp) {
+      var chars = source.slice(index)
+      var match = chars.match(value)
+      if (match) {
+        index += match[0].length
+        return match[0]
+      }
+    } else {
+      if (source.indexOf(value, index) === index) {
+        index += value.length
+        return value
+      }
+    }
+  }
+
+  function skipWhitespace () {
+    read(/[ ]*/)
+  }
+
+  function operator () {
+    var string
+    var possibilities = [/^WITH/i, /^AND/i, /^OR/i, '(', ')', ':', '+']
+    for (var i = 0; i < possibilities.length; i++) {
+      string = read(possibilities[i])
+      if (string) {
+        break
+      }
+    }
+
+    if (string === '+' && index > 1 && source[index - 2] === ' ') {
+      throw new Error('Space before `+`')
+    }
+
+    return string && {
+      type: 'OPERATOR',
+      string: string.toUpperCase()
+    }
+  }
+
+  function idstring () {
+    return read(/[A-Za-z0-9-.]+/)
+  }
+
+  function expectIdstring () {
+    var string = idstring()
+    if (!string) {
+      throw new Error('Expected idstring at offset ' + index)
+    }
+    return string
+  }
+
+  function documentRef () {
+    if (read('DocumentRef-')) {
+      var string = expectIdstring()
+      return { type: 'DOCUMENTREF', string: string }
+    }
+  }
+
+  function licenseRef () {
+    if (read('LicenseRef-')) {
+      var string = expectIdstring()
+      return { type: 'LICENSEREF', string: string }
+    }
+  }
+
+  function identifier () {
+    var begin = index
+    var string = idstring()
+
+    if (licenses.indexOf(string) !== -1) {
+      return {
+        type: 'LICENSE',
+        string: string
+      }
+    } else if (exceptions.indexOf(string) !== -1) {
+      return {
+        type: 'EXCEPTION',
+        string: string
+      }
+    }
+
+    index = begin
+  }
+
+  // Tries to read the next token. Returns `undefined` if no token is
+  // recognized.
+  function parseToken () {
+    // Ordering matters
+    return (
+      operator() ||
+      documentRef() ||
+      licenseRef() ||
+      identifier()
+    )
+  }
+
+  var tokens = []
+  while (hasMore()) {
+    skipWhitespace()
+    if (!hasMore()) {
+      break
+    }
+
+    var token = parseToken()
+    if (!token) {
+      throw new Error('Unexpected `' + source[index] +
+                      '` at offset ' + index)
+    }
+
+    tokens.push(token)
+  }
+  return tokens
+}
+
+
+/***/ }),
+
 /***/ 1734:
 /***/ ((module) => {
 
 "use strict";
 
 
-// eslint-disable-next-line max-len
 // this code adapted from: https://blogs.msdn.microsoft.com/twistylittlepassagesallalike/2011/04/23/everyone-quotes-command-line-arguments-the-wrong-way/
 const cmd = (input, doubleEscape) => {
   if (!input.length) {
@@ -8926,7 +9283,7 @@ const spawnWithShell = (cmd, args, opts, extra) => {
   // ahead of time so that we can escape arguments properly. we don't need coverage here.
   if (command === true) {
     // istanbul ignore next
-    command = process.platform === 'win32' ? process.env.ComSpec : 'sh'
+    command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'sh'
   }
 
   const options = { ...opts, shell: false }
@@ -8987,9 +9344,19 @@ const open = (_args, opts = {}, extra = {}) => {
 
   let platform = process.platform
   // process.platform === 'linux' may actually indicate WSL, if that's the case
-  // we want to treat things as win32 anyway so the host can open the argument
+  // open the argument with sensible-browser which is pre-installed
+  // In WSL, set the default browser using, for example,
+  // export BROWSER="/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"
+  // or
+  // export BROWSER="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+  // To permanently set the default browser, add the appropriate entry to your shell's
+  // RC file, e.g. .bashrc or .zshrc.
   if (platform === 'linux' && os.release().toLowerCase().includes('microsoft')) {
-    platform = 'win32'
+    platform = 'wsl'
+    if (!process.env.BROWSER) {
+      return Promise.reject(
+        new Error('Set the BROWSER environment variable to your desired browser.'))
+    }
   }
 
   let command = options.command
@@ -9002,6 +9369,8 @@ const open = (_args, opts = {}, extra = {}) => {
       // accidentally interpret the first arg as the title, we stick an empty
       // string immediately after the start command
       command = 'start ""'
+    } else if (platform === 'wsl') {
+      command = 'sensible-browser'
     } else if (platform === 'darwin') {
       command = 'open'
     } else {
@@ -9060,286 +9429,6 @@ const findInObject = (obj, key) => {
 }
 
 module.exports = promiseSpawn
-
-
-/***/ }),
-
-/***/ 9380:
-/***/ ((module) => {
-
-"use strict";
-
-module.exports = balanced;
-function balanced(a, b, str) {
-  if (a instanceof RegExp) a = maybeMatch(a, str);
-  if (b instanceof RegExp) b = maybeMatch(b, str);
-
-  var r = range(a, b, str);
-
-  return r && {
-    start: r[0],
-    end: r[1],
-    pre: str.slice(0, r[0]),
-    body: str.slice(r[0] + a.length, r[1]),
-    post: str.slice(r[1] + b.length)
-  };
-}
-
-function maybeMatch(reg, str) {
-  var m = str.match(reg);
-  return m ? m[0] : null;
-}
-
-balanced.range = range;
-function range(a, b, str) {
-  var begs, beg, left, right, result;
-  var ai = str.indexOf(a);
-  var bi = str.indexOf(b, ai + 1);
-  var i = ai;
-
-  if (ai >= 0 && bi > 0) {
-    if(a===b) {
-      return [ai, bi];
-    }
-    begs = [];
-    left = str.length;
-
-    while (i >= 0 && !result) {
-      if (i == ai) {
-        begs.push(i);
-        ai = str.indexOf(a, i + 1);
-      } else if (begs.length == 1) {
-        result = [ begs.pop(), bi ];
-      } else {
-        beg = begs.pop();
-        if (beg < left) {
-          left = beg;
-          right = bi;
-        }
-
-        bi = str.indexOf(b, i + 1);
-      }
-
-      i = ai < bi && ai >= 0 ? ai : bi;
-    }
-
-    if (begs.length) {
-      result = [ left, right ];
-    }
-  }
-
-  return result;
-}
-
-
-/***/ }),
-
-/***/ 4691:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var balanced = __nccwpck_require__(9380);
-
-module.exports = expandTop;
-
-var escSlash = '\0SLASH'+Math.random()+'\0';
-var escOpen = '\0OPEN'+Math.random()+'\0';
-var escClose = '\0CLOSE'+Math.random()+'\0';
-var escComma = '\0COMMA'+Math.random()+'\0';
-var escPeriod = '\0PERIOD'+Math.random()+'\0';
-
-function numeric(str) {
-  return parseInt(str, 10) == str
-    ? parseInt(str, 10)
-    : str.charCodeAt(0);
-}
-
-function escapeBraces(str) {
-  return str.split('\\\\').join(escSlash)
-            .split('\\{').join(escOpen)
-            .split('\\}').join(escClose)
-            .split('\\,').join(escComma)
-            .split('\\.').join(escPeriod);
-}
-
-function unescapeBraces(str) {
-  return str.split(escSlash).join('\\')
-            .split(escOpen).join('{')
-            .split(escClose).join('}')
-            .split(escComma).join(',')
-            .split(escPeriod).join('.');
-}
-
-
-// Basically just str.split(","), but handling cases
-// where we have nested braced sections, which should be
-// treated as individual members, like {a,{b,c},d}
-function parseCommaParts(str) {
-  if (!str)
-    return [''];
-
-  var parts = [];
-  var m = balanced('{', '}', str);
-
-  if (!m)
-    return str.split(',');
-
-  var pre = m.pre;
-  var body = m.body;
-  var post = m.post;
-  var p = pre.split(',');
-
-  p[p.length-1] += '{' + body + '}';
-  var postParts = parseCommaParts(post);
-  if (post.length) {
-    p[p.length-1] += postParts.shift();
-    p.push.apply(p, postParts);
-  }
-
-  parts.push.apply(parts, p);
-
-  return parts;
-}
-
-function expandTop(str) {
-  if (!str)
-    return [];
-
-  // I don't know why Bash 4.3 does this, but it does.
-  // Anything starting with {} will have the first two bytes preserved
-  // but *only* at the top level, so {},a}b will not expand to anything,
-  // but a{},b}c will be expanded to [a}c,abc].
-  // One could argue that this is a bug in Bash, but since the goal of
-  // this module is to match Bash's rules, we escape a leading {}
-  if (str.substr(0, 2) === '{}') {
-    str = '\\{\\}' + str.substr(2);
-  }
-
-  return expand(escapeBraces(str), true).map(unescapeBraces);
-}
-
-function embrace(str) {
-  return '{' + str + '}';
-}
-function isPadded(el) {
-  return /^-?0\d/.test(el);
-}
-
-function lte(i, y) {
-  return i <= y;
-}
-function gte(i, y) {
-  return i >= y;
-}
-
-function expand(str, isTop) {
-  var expansions = [];
-
-  var m = balanced('{', '}', str);
-  if (!m) return [str];
-
-  // no need to expand pre, since it is guaranteed to be free of brace-sets
-  var pre = m.pre;
-  var post = m.post.length
-    ? expand(m.post, false)
-    : [''];
-
-  if (/\$$/.test(m.pre)) {    
-    for (var k = 0; k < post.length; k++) {
-      var expansion = pre+ '{' + m.body + '}' + post[k];
-      expansions.push(expansion);
-    }
-  } else {
-    var isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
-    var isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
-    var isSequence = isNumericSequence || isAlphaSequence;
-    var isOptions = m.body.indexOf(',') >= 0;
-    if (!isSequence && !isOptions) {
-      // {a},b}
-      if (m.post.match(/,.*\}/)) {
-        str = m.pre + '{' + m.body + escClose + m.post;
-        return expand(str);
-      }
-      return [str];
-    }
-
-    var n;
-    if (isSequence) {
-      n = m.body.split(/\.\./);
-    } else {
-      n = parseCommaParts(m.body);
-      if (n.length === 1) {
-        // x{{a,b}}y ==> x{a}y x{b}y
-        n = expand(n[0], false).map(embrace);
-        if (n.length === 1) {
-          return post.map(function(p) {
-            return m.pre + n[0] + p;
-          });
-        }
-      }
-    }
-
-    // at this point, n is the parts, and we know it's not a comma set
-    // with a single entry.
-    var N;
-
-    if (isSequence) {
-      var x = numeric(n[0]);
-      var y = numeric(n[1]);
-      var width = Math.max(n[0].length, n[1].length)
-      var incr = n.length == 3
-        ? Math.abs(numeric(n[2]))
-        : 1;
-      var test = lte;
-      var reverse = y < x;
-      if (reverse) {
-        incr *= -1;
-        test = gte;
-      }
-      var pad = n.some(isPadded);
-
-      N = [];
-
-      for (var i = x; test(i, y); i += incr) {
-        var c;
-        if (isAlphaSequence) {
-          c = String.fromCharCode(i);
-          if (c === '\\')
-            c = '';
-        } else {
-          c = String(i);
-          if (pad) {
-            var need = width - c.length;
-            if (need > 0) {
-              var z = new Array(need + 1).join('0');
-              if (i < 0)
-                c = '-' + z + c.slice(1);
-              else
-                c = z + c;
-            }
-          }
-        }
-        N.push(c);
-      }
-    } else {
-      N = [];
-
-      for (var j = 0; j < n.length; j++) {
-        N.push.apply(N, expand(n[j], false));
-      }
-    }
-
-    for (var j = 0; j < N.length; j++) {
-      for (var k = 0; k < post.length; k++) {
-        var expansion = pre + N[j] + post[k];
-        if (!isTop || isSequence || expansion)
-          expansions.push(expansion);
-      }
-    }
-  }
-
-  return expansions;
-}
-
 
 
 /***/ }),
@@ -9539,7 +9628,11 @@ module.exports = (giturl, opts, { gitHosts, protocols }) => {
 
 const maybeJoin = (...args) => args.every(arg => arg) ? args.join('') : ''
 const maybeEncode = (arg) => arg ? encodeURIComponent(arg) : ''
-const formatHashFragment = (f) => f.toLowerCase().replace(/^\W+|\/|\W+$/g, '').replace(/\W+/g, '-')
+const formatHashFragment = (f) => f.toLowerCase()
+  .replace(/^\W+/g, '') // strip leading non-characters
+  .replace(/(?<!\W)\W+$/, '') // strip trailing non-characters
+  .replace(/\//g, '') // strip all slashes
+  .replace(/\W+/g, '-') // replace remaining non-characters with '-'
 
 const defaults = {
   sshtemplate: ({ domain, user, project, committish }) =>
@@ -9640,8 +9733,6 @@ hosts.gitlab = {
   treepath: 'tree',
   blobpath: 'tree',
   editpath: '-/edit',
-  httpstemplate: ({ auth, domain, user, project, committish }) =>
-    `git+https://${maybeJoin(auth, '@')}${domain}/${user}/${project}.git${maybeJoin('#', committish)}`,
   tarballtemplate: ({ domain, user, project, committish }) =>
     `https://${domain}/${user}/${project}/repository/archive.tar.gz?ref=${maybeEncode(committish || 'HEAD')}`,
   extract: (url) => {
@@ -9777,6 +9868,26 @@ const parseUrl = __nccwpck_require__(1186)
 
 const cache = new LRUCache({ max: 1000 })
 
+function unknownHostedUrl (url) {
+  try {
+    const {
+      protocol,
+      hostname,
+      pathname,
+    } = new URL(url)
+
+    if (!hostname) {
+      return null
+    }
+
+    const proto = /(?:git\+)http:$/.test(protocol) ? 'http:' : 'https:'
+    const path = pathname.replace(/\.git$/, '')
+    return `${proto}//${hostname}${path}`
+  } catch {
+    return null
+  }
+}
+
 class GitHost {
   constructor (type, user, auth, project, committish, defaultRepresentation, opts = {}) {
     Object.assign(this, GitHost.#gitHosts[type], {
@@ -9824,6 +9935,34 @@ class GitHost {
     }
 
     return cache.get(key)
+  }
+
+  static fromManifest (manifest, opts = {}) {
+    if (!manifest || typeof manifest !== 'object') {
+      return
+    }
+
+    const r = manifest.repository
+    // TODO: look into also checking the `bugs`/`homepage` URLs
+
+    const rurl = r && (
+      typeof r === 'string'
+        ? r
+        : typeof r === 'object' && typeof r.url === 'string'
+          ? r.url
+          : null
+    )
+
+    if (!rurl) {
+      throw new Error('no repository')
+    }
+
+    const info = (rurl && GitHost.fromUrl(rurl.replace(/^git\+/, ''), opts)) || null
+    if (info) {
+      return info
+    }
+    const unk = unknownHostedUrl(rurl)
+    return GitHost.fromUrl(unk, opts) || unk
   }
 
   static parseUrl (url) {
@@ -9977,20 +10116,23 @@ const correctProtocol = (arg, protocols) => {
     return arg
   }
 
+  if (arg.substr(firstColon, 3) === '://') {
+    // If arg is given as <foo>://<bar>, then this is already a valid URL.
+    return arg
+  }
+
   const firstAt = arg.indexOf('@')
   if (firstAt > -1) {
     if (firstAt > firstColon) {
+      // URL has the form of <foo>:<bar>@<baz>. Assume this is a git+ssh URL.
       return `git+ssh://${arg}`
     } else {
+      // URL has the form 'git@github.com:npm/hosted-git-info.git'.
       return arg
     }
   }
 
-  const doubleSlash = arg.indexOf('//')
-  if (doubleSlash === firstColon + 1) {
-    return arg
-  }
-
+  // Correct <foo>:<bar> to <foo>://<bar>
   return `${arg.slice(0, firstColon + 1)}//${arg.slice(firstColon + 1)}`
 }
 
@@ -10473,6 +10615,7 @@ parseJsonError.noExceptions = (raw, reviver) => {
 
 const process = __nccwpck_require__(1708)
 const nodeOs = __nccwpck_require__(8161)
+const fs = __nccwpck_require__(3024)
 
 function isMusl (file) {
   return file.includes('libc.musl-') || file.includes('ld-musl-')
@@ -10486,12 +10629,23 @@ function cpu () {
   return process.arch
 }
 
-function libc (osName) {
-  // this is to make it faster on non linux machines
-  if (osName !== 'linux') {
+const LDD_PATH = '/usr/bin/ldd'
+function getFamilyFromFilesystem () {
+  try {
+    const content = fs.readFileSync(LDD_PATH, 'utf-8')
+    if (content.includes('musl')) {
+      return 'musl'
+    }
+    if (content.includes('GNU C Library')) {
+      return 'glibc'
+    }
+    return null
+  } catch {
     return undefined
   }
-  let family
+}
+
+function getFamilyFromReport () {
   const originalExclude = process.report.excludeNetwork
   process.report.excludeNetwork = true
   const report = process.report.getReport()
@@ -10500,6 +10654,22 @@ function libc (osName) {
     family = 'glibc'
   } else if (Array.isArray(report.sharedObjects) && report.sharedObjects.some(isMusl)) {
     family = 'musl'
+  } else {
+    family = null
+  }
+  return family
+}
+
+let family
+function libc (osName) {
+  if (osName !== 'linux') {
+    return undefined
+  }
+  if (family === undefined) {
+    family = getFamilyFromFilesystem()
+    if (family === undefined) {
+      family = getFamilyFromReport()
+    }
   }
   return family
 }
@@ -10633,14 +10803,14 @@ function checkDependency (wanted, current, opts) {
 /** checks devEngines package property and returns array of warnings / errors */
 function checkDevEngines (wanted, current = {}, opts = {}) {
   if ((typeof wanted !== 'object' || wanted === null) || Array.isArray(wanted)) {
-    throw new Error(`Invalid non-object value for devEngines`)
+    throw new Error(`Invalid non-object value for "devEngines"`)
   }
 
   const errors = []
 
   for (const engine of Object.keys(wanted)) {
     if (!recognizedEngines.includes(engine)) {
-      throw new Error(`Invalid property "${engine}"`)
+      throw new Error(`Invalid property "devEngines.${engine}"`)
     }
     const dependencyAsAuthored = wanted[engine]
     const dependencies = [dependencyAsAuthored].flat()
@@ -10668,7 +10838,7 @@ function checkDevEngines (wanted, current = {}, opts = {}) {
         onFail = 'error'
       }
 
-      const err = Object.assign(new Error(`Invalid engine "${engine}"`), {
+      const err = Object.assign(new Error(`Invalid devEngines.${engine}`), {
         errors: depErrors,
         engine,
         isWarn: onFail === 'warn',
@@ -13412,24 +13582,26 @@ module.exports = normalize
 
 "use strict";
 
-module.exports = npa
-module.exports.resolve = resolve
-module.exports.toPurl = toPurl
-module.exports.Result = Result
 
-const { URL } = __nccwpck_require__(7016)
+const isWindows = process.platform === 'win32'
+
+const { URL } = __nccwpck_require__(3136)
+// We need to use path/win32 so that we get consistent results in tests, but this also means we need to manually convert backslashes to forward slashes when generating file: urls with paths.
+const path = isWindows ? __nccwpck_require__(8152) : __nccwpck_require__(6760)
+const { homedir } = __nccwpck_require__(8161)
 const HostedGit = __nccwpck_require__(2537)
 const semver = __nccwpck_require__(4925)
-const path = global.FAKE_WINDOWS ? (__nccwpck_require__(6928).win32) : __nccwpck_require__(6928)
 const validatePackageName = __nccwpck_require__(7825)
-const { homedir } = __nccwpck_require__(857)
 const { log } = __nccwpck_require__(6687)
 
-const isWindows = process.platform === 'win32' || global.FAKE_WINDOWS
 const hasSlashes = isWindows ? /\\|[/]/ : /[/]/
 const isURL = /^(?:git[+])?[a-z]+:/i
 const isGit = /^[^@]+@[^:.]+\.[^:]+:.+$/i
-const isFilename = /[.](?:tgz|tar.gz|tar)$/i
+const isFileType = /[.](?:tgz|tar\.gz|tar)$/i
+const isPortNumber = /:[0-9]+(\/|$)/i
+const isWindowsFile = /^(?:[.]|~[/]|[/\\]|[a-zA-Z]:)/
+const isPosixFile = /^(?:[.]|~[/]|[/]|[a-zA-Z]:)/
+const defaultRegistry = 'https://registry.npmjs.org'
 
 function npa (arg, where) {
   let name
@@ -13443,13 +13615,14 @@ function npa (arg, where) {
       return npa(arg.raw, where || arg.where)
     }
   }
-  const nameEndsAt = arg[0] === '@' ? arg.slice(1).indexOf('@') + 1 : arg.indexOf('@')
+  const nameEndsAt = arg.indexOf('@', 1) // Skip possible leading @
   const namePart = nameEndsAt > 0 ? arg.slice(0, nameEndsAt) : arg
   if (isURL.test(arg)) {
     spec = arg
   } else if (isGit.test(arg)) {
     spec = `git+ssh://${arg}`
-  } else if (namePart[0] !== '@' && (hasSlashes.test(namePart) || isFilename.test(namePart))) {
+  // eslint-disable-next-line max-len
+  } else if (!namePart.startsWith('@') && (hasSlashes.test(namePart) || isFileType.test(namePart))) {
     spec = arg
   } else if (nameEndsAt > 0) {
     name = namePart
@@ -13466,7 +13639,25 @@ function npa (arg, where) {
   return resolve(name, spec, where, arg)
 }
 
-const isFilespec = isWindows ? /^(?:[.]|~[/]|[/\\]|[a-zA-Z]:)/ : /^(?:[.]|~[/]|[/]|[a-zA-Z]:)/
+function isFileSpec (spec) {
+  if (!spec) {
+    return false
+  }
+  if (spec.toLowerCase().startsWith('file:')) {
+    return true
+  }
+  if (isWindows) {
+    return isWindowsFile.test(spec)
+  }
+  return isPosixFile.test(spec)
+}
+
+function isAliasSpec (spec) {
+  if (!spec) {
+    return false
+  }
+  return spec.toLowerCase().startsWith('npm:')
+}
 
 function resolve (name, spec, where, arg) {
   const res = new Result({
@@ -13477,12 +13668,16 @@ function resolve (name, spec, where, arg) {
   })
 
   if (name) {
-    res.setName(name)
+    res.name = name
   }
 
-  if (spec && (isFilespec.test(spec) || /^file:/i.test(spec))) {
+  if (!where) {
+    where = process.cwd()
+  }
+
+  if (isFileSpec(spec)) {
     return fromFile(res, where)
-  } else if (spec && /^npm:/i.test(spec)) {
+  } else if (isAliasSpec(spec)) {
     return fromAlias(res, where)
   }
 
@@ -13494,14 +13689,12 @@ function resolve (name, spec, where, arg) {
     return fromHostedGit(res, hosted)
   } else if (spec && isURL.test(spec)) {
     return fromURL(res)
-  } else if (spec && (hasSlashes.test(spec) || isFilename.test(spec))) {
+  } else if (spec && (hasSlashes.test(spec) || isFileType.test(spec))) {
     return fromFile(res, where)
   } else {
     return fromRegistry(res)
   }
 }
-
-const defaultRegistry = 'https://registry.npmjs.org'
 
 function toPurl (arg, reg = defaultRegistry) {
   const res = npa(arg)
@@ -13540,60 +13733,62 @@ function invalidPurlType (type, raw) {
   return err
 }
 
-function Result (opts) {
-  this.type = opts.type
-  this.registry = opts.registry
-  this.where = opts.where
-  if (opts.raw == null) {
-    this.raw = opts.name ? opts.name + '@' + opts.rawSpec : opts.rawSpec
-  } else {
-    this.raw = opts.raw
+class Result {
+  constructor (opts) {
+    this.type = opts.type
+    this.registry = opts.registry
+    this.where = opts.where
+    if (opts.raw == null) {
+      this.raw = opts.name ? `${opts.name}@${opts.rawSpec}` : opts.rawSpec
+    } else {
+      this.raw = opts.raw
+    }
+    this.name = undefined
+    this.escapedName = undefined
+    this.scope = undefined
+    this.rawSpec = opts.rawSpec || ''
+    this.saveSpec = opts.saveSpec
+    this.fetchSpec = opts.fetchSpec
+    if (opts.name) {
+      this.setName(opts.name)
+    }
+    this.gitRange = opts.gitRange
+    this.gitCommittish = opts.gitCommittish
+    this.gitSubdir = opts.gitSubdir
+    this.hosted = opts.hosted
   }
 
-  this.name = undefined
-  this.escapedName = undefined
-  this.scope = undefined
-  this.rawSpec = opts.rawSpec || ''
-  this.saveSpec = opts.saveSpec
-  this.fetchSpec = opts.fetchSpec
-  if (opts.name) {
-    this.setName(opts.name)
-  }
-  this.gitRange = opts.gitRange
-  this.gitCommittish = opts.gitCommittish
-  this.gitSubdir = opts.gitSubdir
-  this.hosted = opts.hosted
-}
+  // TODO move this to a getter/setter in a semver major
+  setName (name) {
+    const valid = validatePackageName(name)
+    if (!valid.validForOldPackages) {
+      throw invalidPackageName(name, valid, this.raw)
+    }
 
-Result.prototype.setName = function (name) {
-  const valid = validatePackageName(name)
-  if (!valid.validForOldPackages) {
-    throw invalidPackageName(name, valid, this.raw)
+    this.name = name
+    this.scope = name[0] === '@' ? name.slice(0, name.indexOf('/')) : undefined
+    // scoped packages in couch must have slash url-encoded, e.g. @foo%2Fbar
+    this.escapedName = name.replace('/', '%2f')
+    return this
   }
 
-  this.name = name
-  this.scope = name[0] === '@' ? name.slice(0, name.indexOf('/')) : undefined
-  // scoped packages in couch must have slash url-encoded, e.g. @foo%2Fbar
-  this.escapedName = name.replace('/', '%2f')
-  return this
-}
-
-Result.prototype.toString = function () {
-  const full = []
-  if (this.name != null && this.name !== '') {
-    full.push(this.name)
+  toString () {
+    const full = []
+    if (this.name != null && this.name !== '') {
+      full.push(this.name)
+    }
+    const spec = this.saveSpec || this.fetchSpec || this.rawSpec
+    if (spec != null && spec !== '') {
+      full.push(spec)
+    }
+    return full.length ? full.join('@') : this.raw
   }
-  const spec = this.saveSpec || this.fetchSpec || this.rawSpec
-  if (spec != null && spec !== '') {
-    full.push(spec)
-  }
-  return full.length ? full.join('@') : this.raw
-}
 
-Result.prototype.toJSON = function () {
-  const result = Object.assign({}, this)
-  delete result.hosted
-  return result
+  toJSON () {
+    const result = Object.assign({}, this)
+    delete result.hosted
+    return result
+  }
 }
 
 // sets res.gitCommittish, res.gitRange, and res.gitSubdir
@@ -13640,25 +13835,67 @@ function setGitAttrs (res, committish) {
   }
 }
 
-function fromFile (res, where) {
-  if (!where) {
-    where = process.cwd()
+// Taken from: EncodePathChars and lookup_table in src/node_url.cc
+// url.pathToFileURL only returns absolute references.  We can't use it to encode paths.
+// encodeURI mangles windows paths. We can't use it to encode paths.
+// Under the hood, url.pathToFileURL does a limited set of encoding, with an extra windows step, and then calls path.resolve.
+// The encoding node does without path.resolve is not available outside of the source, so we are recreating it here.
+const encodedPathChars = new Map([
+  ['\0', '%00'],
+  ['\t', '%09'],
+  ['\n', '%0A'],
+  ['\r', '%0D'],
+  [' ', '%20'],
+  ['"', '%22'],
+  ['#', '%23'],
+  ['%', '%25'],
+  ['?', '%3F'],
+  ['[', '%5B'],
+  ['\\', isWindows ? '/' : '%5C'],
+  [']', '%5D'],
+  ['^', '%5E'],
+  ['|', '%7C'],
+  ['~', '%7E'],
+])
+
+function pathToFileURL (str) {
+  let result = ''
+  for (let i = 0; i < str.length; i++) {
+    result = `${result}${encodedPathChars.get(str[i]) ?? str[i]}`
   }
-  res.type = isFilename.test(res.rawSpec) ? 'file' : 'directory'
+  if (result.startsWith('file:')) {
+    return result
+  }
+  return `file:${result}`
+}
+
+function fromFile (res, where) {
+  res.type = isFileType.test(res.rawSpec) ? 'file' : 'directory'
   res.where = where
 
-  // always put the '/' on where when resolving urls, or else
-  // file:foo from /path/to/bar goes to /path/to/foo, when we want
-  // it to be /path/to/bar/foo
+  let rawSpec = pathToFileURL(res.rawSpec)
 
-  let specUrl
+  if (rawSpec.startsWith('file:/')) {
+    // XXX backwards compatibility lack of compliance with RFC 8089
+
+    // turn file://path into file:/path
+    if (/^file:\/\/[^/]/.test(rawSpec)) {
+      rawSpec = `file:/${rawSpec.slice(5)}`
+    }
+
+    // turn file:/../path into file:../path
+    // for 1 or 3 leading slashes (2 is already ruled out from handling file:// explicitly above)
+    if (/^\/{1,3}\.\.?(\/|$)/.test(rawSpec.slice(5))) {
+      rawSpec = rawSpec.replace(/^file:\/{1,3}/, 'file:')
+    }
+  }
+
   let resolvedUrl
-  const prefix = (!/^file:/.test(res.rawSpec) ? 'file:' : '')
-  const rawWithPrefix = prefix + res.rawSpec
-  let rawNoPrefix = rawWithPrefix.replace(/^file:/, '')
+  let specUrl
   try {
-    resolvedUrl = new URL(rawWithPrefix, `file://${path.resolve(where)}/`)
-    specUrl = new URL(rawWithPrefix)
+    // always put the '/' on "where", or else file:foo from /path/to/bar goes to /path/to/foo, when we want it to be /path/to/bar/foo
+    resolvedUrl = new URL(rawSpec, `${pathToFileURL(path.resolve(where))}/`)
+    specUrl = new URL(rawSpec)
   } catch (originalError) {
     const er = new Error('Invalid file: URL, must comply with RFC 8089')
     throw Object.assign(er, {
@@ -13668,24 +13905,6 @@ function fromFile (res, where) {
       originalError,
     })
   }
-
-  // XXX backwards compatibility lack of compliance with RFC 8089
-  if (resolvedUrl.host && resolvedUrl.host !== 'localhost') {
-    const rawSpec = res.rawSpec.replace(/^file:\/\//, 'file:///')
-    resolvedUrl = new URL(rawSpec, `file://${path.resolve(where)}/`)
-    specUrl = new URL(rawSpec)
-    rawNoPrefix = rawSpec.replace(/^file:/, '')
-  }
-  // turn file:/../foo into file:../foo
-  // for 1, 2 or 3 leading slashes since we attempted
-  // in the previous step to make it a file protocol url with a leading slash
-  if (/^\/{1,3}\.\.?(\/|$)/.test(rawNoPrefix)) {
-    const rawSpec = res.rawSpec.replace(/^file:\/{1,3}/, 'file:')
-    resolvedUrl = new URL(rawSpec, `file://${path.resolve(where)}/`)
-    specUrl = new URL(rawSpec)
-    rawNoPrefix = rawSpec.replace(/^file:/, '')
-  }
-  // XXX end RFC 8089 violation backwards compatibility section
 
   // turn /C:/blah into just C:/blah on windows
   let specPath = decodeURIComponent(specUrl.pathname)
@@ -13700,13 +13919,21 @@ function fromFile (res, where) {
   if (/^\/~(\/|$)/.test(specPath)) {
     res.saveSpec = `file:${specPath.substr(1)}`
     resolvedPath = path.resolve(homedir(), specPath.substr(3))
-  } else if (!path.isAbsolute(rawNoPrefix)) {
+  } else if (!path.isAbsolute(rawSpec.slice(5))) {
     res.saveSpec = `file:${path.relative(where, resolvedPath)}`
   } else {
     res.saveSpec = `file:${path.resolve(resolvedPath)}`
   }
 
   res.fetchSpec = path.resolve(where, resolvedPath)
+  // re-normalize the slashes in saveSpec due to node:path/win32 behavior in windows
+  res.saveSpec = res.saveSpec.split('\\').join('/')
+  // Ignoring because this only happens in windows
+  /* istanbul ignore next */
+  if (res.saveSpec.startsWith('file://')) {
+    // normalization of \\win32\root paths can cause a double / which we don't want
+    res.saveSpec = `file:/${res.saveSpec.slice(7)}`
+  }
   return res
 }
 
@@ -13737,7 +13964,9 @@ function fromURL (res) {
     // git+ssh://git@my.custom.git.com:username/project.git#deadbeef
     // ...and various combinations. The username in the beginning is *required*.
     const matched = rawSpec.match(/^git\+ssh:\/\/([^:#]+:[^#]+(?:\.git)?)(?:#(.*))?$/i)
-    if (matched && !matched[1].match(/:[0-9]+\/?.*$/i)) {
+    // Filter out all-number "usernames" which are really port numbers
+    // They can either be :1234 :1234/ or :1234/path but not :12abc
+    if (matched && !matched[1].match(isPortNumber)) {
       res.type = 'git'
       setGitAttrs(res, matched[2])
       res.fetchSpec = matched[1]
@@ -13826,6 +14055,11 @@ function fromRegistry (res) {
   }
   return res
 }
+
+module.exports = npa
+module.exports.resolve = resolve
+module.exports.toPurl = toPurl
+module.exports.Result = Result
 
 
 /***/ }),
@@ -14305,7 +14539,7 @@ class Comparator {
 
 module.exports = Comparator
 
-const parseOptions = __nccwpck_require__(8995)
+const parseOptions = __nccwpck_require__(1376)
 const { re, t } = __nccwpck_require__(7998)
 const cmp = __nccwpck_require__(1303)
 const debug = __nccwpck_require__(2192)
@@ -14515,7 +14749,7 @@ module.exports = Range
 const LRU = __nccwpck_require__(1757)
 const cache = new LRU({ max: 1000 })
 
-const parseOptions = __nccwpck_require__(8995)
+const parseOptions = __nccwpck_require__(1376)
 const Comparator = __nccwpck_require__(7400)
 const debug = __nccwpck_require__(2192)
 const SemVer = __nccwpck_require__(4972)
@@ -14851,7 +15085,7 @@ const debug = __nccwpck_require__(2192)
 const { MAX_LENGTH, MAX_SAFE_INTEGER } = __nccwpck_require__(7362)
 const { re, t } = __nccwpck_require__(7998)
 
-const parseOptions = __nccwpck_require__(8995)
+const parseOptions = __nccwpck_require__(1376)
 const { compareIdentifiers } = __nccwpck_require__(4971)
 class SemVer {
   constructor (version, options) {
@@ -15447,7 +15681,7 @@ const { MAX_LENGTH } = __nccwpck_require__(7362)
 const { re, t } = __nccwpck_require__(7998)
 const SemVer = __nccwpck_require__(4972)
 
-const parseOptions = __nccwpck_require__(8995)
+const parseOptions = __nccwpck_require__(1376)
 const parse = (version, options) => {
   options = parseOptions(options)
 
@@ -15728,7 +15962,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 8995:
+/***/ 1376:
 /***/ ((module) => {
 
 // parse out just the options we care about so we always get a consistent
@@ -16626,13 +16860,10 @@ const pickManifest = (packument, wanted, opts) => {
     throw new Error('Only tag, version, and range are supported')
   }
 
-  // if the type is 'tag', and not just the implicit default, then it must
-  // be that exactly, or nothing else will do.
+  // if the type is 'tag', and not just the implicit default, then it must be that exactly, or nothing else will do.
   if (wanted && type === 'tag') {
     const ver = distTags[wanted]
-    // if the version in the dist-tags is before the before date, then
-    // we use that.  Otherwise, we get the highest precedence version
-    // prior to the dist-tag.
+    // if the version in the dist-tags is before the before date, then we use that. Otherwise, we get the highest precedence version prior to the dist-tag.
     if (isBefore(verTimes, ver, time)) {
       return decorateAvoid(versions[ver] || staged[ver] || restricted[ver], avoid)
     } else {
@@ -16650,9 +16881,7 @@ const pickManifest = (packument, wanted, opts) => {
   // ok, sort based on our heuristics, and pick the best fit
   const range = type === 'range' ? wanted : '*'
 
-  // if the range is *, then we prefer the 'latest' if available
-  // but skip this if it should be avoided, in that case we have
-  // to try a little harder.
+  // if the range is *, then we prefer the 'latest' if available but skip this if it should be avoided, in that case we have to try a little harder.
   const defaultVer = distTags[defaultTag]
   if (defaultVer &&
       (range === '*' || semver.satisfies(defaultVer, range, { loose: true })) &&
@@ -18442,7 +18671,7 @@ module.exports = rcompare
 
 /***/ }),
 
-/***/ 449:
+/***/ 2830:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 const compareBuild = __nccwpck_require__(2049)
@@ -18514,7 +18743,7 @@ const rcompare = __nccwpck_require__(7454)
 const compareLoose = __nccwpck_require__(3973)
 const compareBuild = __nccwpck_require__(2049)
 const sort = __nccwpck_require__(8219)
-const rsort = __nccwpck_require__(449)
+const rsort = __nccwpck_require__(2830)
 const gt = __nccwpck_require__(7088)
 const lt = __nccwpck_require__(871)
 const eq = __nccwpck_require__(9709)
@@ -19583,10 +19812,15 @@ module.exports = {
       end: 'end',
       read: 'read',
     },
-    start: function (fn) {
-      process.emit('input', 'start')
+    start: function (...args) {
+      // Support callback for backwards compatibility and pass additional args to event
+      let fn
+      if (typeof args[0] === 'function') {
+        fn = args.shift()
+      }
+      process.emit('input', 'start', ...args)
       function end () {
-        return process.emit('input', 'end')
+        return process.emit('input', 'end', ...args)
       }
       if (typeof fn === 'function') {
         const res = fn()
@@ -19598,8 +19832,8 @@ module.exports = {
       }
       return end
     },
-    end: function () {
-      return process.emit('input', 'end')
+    end: function (...args) {
+      return process.emit('input', 'end', ...args)
     },
     read: function (...args) {
       let resolve, reject
@@ -19611,50 +19845,6 @@ module.exports = {
       return promise
     },
   },
-}
-
-
-/***/ }),
-
-/***/ 876:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-module.exports = inflight
-
-let Bluebird
-try {
-  Bluebird = __nccwpck_require__(1132)
-} catch (_) {
-  Bluebird = Promise
-}
-
-const active = {}
-inflight.active = active
-function inflight (unique, doFly) {
-  return Bluebird.all([unique, doFly]).then(function (args) {
-    const unique = args[0]
-    const doFly = args[1]
-    if (Array.isArray(unique)) {
-      return Bluebird.all(unique).then(function (uniqueArr) {
-        return _inflight(uniqueArr.join(''), doFly)
-      })
-    } else {
-      return _inflight(unique, doFly)
-    }
-  })
-
-  function _inflight (unique, doFly) {
-    if (!active[unique]) {
-      active[unique] = (new Bluebird(function (resolve) {
-        return resolve(doFly())
-      }))
-      active[unique].then(cleanup, cleanup)
-      function cleanup() { delete active[unique] }
-    }
-    return active[unique]
-  }
 }
 
 
@@ -20002,6 +20192,9 @@ RetryOperation.prototype.mainError = function() {
 /***/ 9379:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const ANY = Symbol('SemVer ANY')
 // hoisted class for cyclic dependency
 class Comparator {
@@ -20149,6 +20342,9 @@ const Range = __nccwpck_require__(6782)
 
 /***/ 6782:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SPACE_CHARACTERS = /\s+/g
 
@@ -20405,6 +20601,7 @@ const isSatisfiable = (comparators, options) => {
 // already replaced the hyphen ranges
 // turn into a set of JUST comparators.
 const parseComparator = (comp, options) => {
+  comp = comp.replace(re[t.BUILD], '')
   debug('comp', comp, options)
   comp = replaceCarets(comp, options)
   debug('caret', comp)
@@ -20711,9 +20908,12 @@ const testSet = (set, version, options) => {
 /***/ 7163:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const debug = __nccwpck_require__(1159)
 const { MAX_LENGTH, MAX_SAFE_INTEGER } = __nccwpck_require__(5101)
-const { safeRe: re, safeSrc: src, t } = __nccwpck_require__(5471)
+const { safeRe: re, t } = __nccwpck_require__(5471)
 
 const parseOptions = __nccwpck_require__(356)
 const { compareIdentifiers } = __nccwpck_require__(3348)
@@ -20822,11 +21022,25 @@ class SemVer {
       other = new SemVer(other, this.options)
     }
 
-    return (
-      compareIdentifiers(this.major, other.major) ||
-      compareIdentifiers(this.minor, other.minor) ||
-      compareIdentifiers(this.patch, other.patch)
-    )
+    if (this.major < other.major) {
+      return -1
+    }
+    if (this.major > other.major) {
+      return 1
+    }
+    if (this.minor < other.minor) {
+      return -1
+    }
+    if (this.minor > other.minor) {
+      return 1
+    }
+    if (this.patch < other.patch) {
+      return -1
+    }
+    if (this.patch > other.patch) {
+      return 1
+    }
+    return 0
   }
 
   comparePre (other) {
@@ -20895,8 +21109,7 @@ class SemVer {
       }
       // Avoid an invalid semver results
       if (identifier) {
-        const r = new RegExp(`^${this.options.loose ? src[t.PRERELEASELOOSE] : src[t.PRERELEASE]}$`)
-        const match = `-${identifier}`.match(r)
+        const match = `-${identifier}`.match(this.options.loose ? re[t.PRERELEASELOOSE] : re[t.PRERELEASE])
         if (!match || match[1] !== identifier) {
           throw new Error(`invalid identifier: ${identifier}`)
         }
@@ -21036,6 +21249,9 @@ module.exports = SemVer
 /***/ 1799:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const parse = __nccwpck_require__(6353)
 const clean = (version, options) => {
   const s = parse(version.trim().replace(/^[=v]+/, ''), options)
@@ -21048,6 +21264,9 @@ module.exports = clean
 
 /***/ 8646:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const eq = __nccwpck_require__(5082)
 const neq = __nccwpck_require__(4974)
@@ -21107,6 +21326,9 @@ module.exports = cmp
 
 /***/ 5385:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const parse = __nccwpck_require__(6353)
@@ -21175,6 +21397,9 @@ module.exports = coerce
 /***/ 7648:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const SemVer = __nccwpck_require__(7163)
 const compareBuild = (a, b, loose) => {
   const versionA = new SemVer(a, loose)
@@ -21189,6 +21414,9 @@ module.exports = compareBuild
 /***/ 6874:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const compareLoose = (a, b) => compare(a, b, true)
 module.exports = compareLoose
@@ -21198,6 +21426,9 @@ module.exports = compareLoose
 
 /***/ 8469:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const compare = (a, b, loose) =>
@@ -21210,6 +21441,9 @@ module.exports = compare
 
 /***/ 711:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const parse = __nccwpck_require__(6353)
 
@@ -21264,7 +21498,7 @@ const diff = (version1, version2) => {
     return prefix + 'patch'
   }
 
-  // high and low are preleases
+  // high and low are prereleases
   return 'prerelease'
 }
 
@@ -21276,6 +21510,9 @@ module.exports = diff
 /***/ 5082:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const eq = (a, b, loose) => compare(a, b, loose) === 0
 module.exports = eq
@@ -21285,6 +21522,9 @@ module.exports = eq
 
 /***/ 6599:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const compare = __nccwpck_require__(8469)
 const gt = (a, b, loose) => compare(a, b, loose) > 0
@@ -21296,6 +21536,9 @@ module.exports = gt
 /***/ 1236:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const gte = (a, b, loose) => compare(a, b, loose) >= 0
 module.exports = gte
@@ -21305,6 +21548,9 @@ module.exports = gte
 
 /***/ 2338:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 
@@ -21332,6 +21578,9 @@ module.exports = inc
 /***/ 3872:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const lt = (a, b, loose) => compare(a, b, loose) < 0
 module.exports = lt
@@ -21341,6 +21590,9 @@ module.exports = lt
 
 /***/ 6717:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const compare = __nccwpck_require__(8469)
 const lte = (a, b, loose) => compare(a, b, loose) <= 0
@@ -21352,6 +21604,9 @@ module.exports = lte
 /***/ 8511:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const SemVer = __nccwpck_require__(7163)
 const major = (a, loose) => new SemVer(a, loose).major
 module.exports = major
@@ -21361,6 +21616,9 @@ module.exports = major
 
 /***/ 2603:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const minor = (a, loose) => new SemVer(a, loose).minor
@@ -21372,6 +21630,9 @@ module.exports = minor
 /***/ 4974:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const neq = (a, b, loose) => compare(a, b, loose) !== 0
 module.exports = neq
@@ -21381,6 +21642,9 @@ module.exports = neq
 
 /***/ 6353:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const parse = (version, options, throwErrors = false) => {
@@ -21405,6 +21669,9 @@ module.exports = parse
 /***/ 8756:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const SemVer = __nccwpck_require__(7163)
 const patch = (a, loose) => new SemVer(a, loose).patch
 module.exports = patch
@@ -21414,6 +21681,9 @@ module.exports = patch
 
 /***/ 5714:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const parse = __nccwpck_require__(6353)
 const prerelease = (version, options) => {
@@ -21428,6 +21698,9 @@ module.exports = prerelease
 /***/ 2173:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compare = __nccwpck_require__(8469)
 const rcompare = (a, b, loose) => compare(b, a, loose)
 module.exports = rcompare
@@ -21438,6 +21711,9 @@ module.exports = rcompare
 /***/ 7192:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compareBuild = __nccwpck_require__(7648)
 const rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose))
 module.exports = rsort
@@ -21447,6 +21723,9 @@ module.exports = rsort
 
 /***/ 8011:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const Range = __nccwpck_require__(6782)
 const satisfies = (version, range, options) => {
@@ -21465,6 +21744,9 @@ module.exports = satisfies
 /***/ 9872:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const compareBuild = __nccwpck_require__(7648)
 const sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose))
 module.exports = sort
@@ -21474,6 +21756,9 @@ module.exports = sort
 
 /***/ 8780:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const parse = __nccwpck_require__(6353)
 const valid = (version, options) => {
@@ -21487,6 +21772,9 @@ module.exports = valid
 
 /***/ 2088:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 // just pre-load all the stuff that index.js lazily exports
 const internalRe = __nccwpck_require__(5471)
@@ -21584,6 +21872,9 @@ module.exports = {
 /***/ 5101:
 /***/ ((module) => {
 
+"use strict";
+
+
 // Note: this is the semver.org version of the spec that it implements
 // Not necessarily the package version of this code.
 const SEMVER_SPEC_VERSION = '2.0.0'
@@ -21626,6 +21917,9 @@ module.exports = {
 /***/ 1159:
 /***/ ((module) => {
 
+"use strict";
+
+
 const debug = (
   typeof process === 'object' &&
   process.env &&
@@ -21642,8 +21936,15 @@ module.exports = debug
 /***/ 3348:
 /***/ ((module) => {
 
+"use strict";
+
+
 const numeric = /^[0-9]+$/
 const compareIdentifiers = (a, b) => {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a === b ? 0 : a < b ? -1 : 1
+  }
+
   const anum = numeric.test(a)
   const bnum = numeric.test(b)
 
@@ -21671,6 +21972,9 @@ module.exports = {
 
 /***/ 1383:
 /***/ ((module) => {
+
+"use strict";
+
 
 class LRUCache {
   constructor () {
@@ -21719,6 +22023,9 @@ module.exports = LRUCache
 /***/ 356:
 /***/ ((module) => {
 
+"use strict";
+
+
 // parse out just the options we care about
 const looseOption = Object.freeze({ loose: true })
 const emptyOpts = Object.freeze({ })
@@ -21740,6 +22047,9 @@ module.exports = parseOptions
 
 /***/ 5471:
 /***/ ((module, exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const {
   MAX_SAFE_COMPONENT_LENGTH,
@@ -21819,12 +22129,14 @@ createToken('MAINVERSIONLOOSE', `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
 
 // ## Pre-release Version Identifier
 // A numeric identifier, or a non-numeric identifier.
+// Non-numeric identifiers include numeric identifiers but can be longer.
+// Therefore non-numeric identifiers must go first.
 
-createToken('PRERELEASEIDENTIFIER', `(?:${src[t.NUMERICIDENTIFIER]
-}|${src[t.NONNUMERICIDENTIFIER]})`)
+createToken('PRERELEASEIDENTIFIER', `(?:${src[t.NONNUMERICIDENTIFIER]
+}|${src[t.NUMERICIDENTIFIER]})`)
 
-createToken('PRERELEASEIDENTIFIERLOOSE', `(?:${src[t.NUMERICIDENTIFIERLOOSE]
-}|${src[t.NONNUMERICIDENTIFIER]})`)
+createToken('PRERELEASEIDENTIFIERLOOSE', `(?:${src[t.NONNUMERICIDENTIFIER]
+}|${src[t.NUMERICIDENTIFIERLOOSE]})`)
 
 // ## Pre-release Version
 // Hyphen, followed by one or more dot-separated pre-release version
@@ -21967,6 +22279,9 @@ createToken('GTE0PRE', '^\\s*>=\\s*0\\.0\\.0-0\\s*$')
 /***/ 2276:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 // Determine if version is greater than all the versions possible in the range.
 const outside = __nccwpck_require__(280)
 const gtr = (version, range, options) => outside(version, range, '>', options)
@@ -21977,6 +22292,9 @@ module.exports = gtr
 
 /***/ 3465:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const Range = __nccwpck_require__(6782)
 const intersects = (r1, r2, options) => {
@@ -21992,6 +22310,9 @@ module.exports = intersects
 /***/ 5213:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const outside = __nccwpck_require__(280)
 // Determine if version is less than all the versions possible in the range
 const ltr = (version, range, options) => outside(version, range, '<', options)
@@ -22002,6 +22323,9 @@ module.exports = ltr
 
 /***/ 5574:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const Range = __nccwpck_require__(6782)
@@ -22035,6 +22359,9 @@ module.exports = maxSatisfying
 /***/ 8595:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const SemVer = __nccwpck_require__(7163)
 const Range = __nccwpck_require__(6782)
 const minSatisfying = (versions, range, options) => {
@@ -22065,6 +22392,9 @@ module.exports = minSatisfying
 
 /***/ 1866:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const Range = __nccwpck_require__(6782)
@@ -22133,6 +22463,9 @@ module.exports = minVersion
 
 /***/ 280:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
 
 const SemVer = __nccwpck_require__(7163)
 const Comparator = __nccwpck_require__(9379)
@@ -22221,6 +22554,9 @@ module.exports = outside
 /***/ 2028:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 // given a set of versions and a range, create a "simplified" range
 // that includes the same versions that the original range does
 // If the original range is shorter than the simplified one, return that.
@@ -22275,6 +22611,9 @@ module.exports = (versions, range, options) => {
 /***/ 1489:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const Range = __nccwpck_require__(6782)
 const Comparator = __nccwpck_require__(9379)
 const { ANY } = Comparator
@@ -22313,7 +22652,7 @@ const compare = __nccwpck_require__(8469)
 // - If LT
 //   - If LT.semver is greater than any < or <= comp in C, return false
 //   - If LT is <=, and LT.semver does not satisfy every C, return false
-//   - If GT.semver has a prerelease, and not in prerelease mode
+//   - If LT.semver has a prerelease, and not in prerelease mode
 //     - If no C has a prerelease and the LT.semver tuple, return false
 // - Else return true
 
@@ -22529,6 +22868,9 @@ module.exports = subset
 /***/ 4750:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const Range = __nccwpck_require__(6782)
 
 // Mostly just for testing and legacy API reasons
@@ -22544,6 +22886,9 @@ module.exports = toComparators
 /***/ 4737:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
+"use strict";
+
+
 const Range = __nccwpck_require__(6782)
 const validRange = (range, options) => {
   try {
@@ -22555,678 +22900,6 @@ const validRange = (range, options) => {
   }
 }
 module.exports = validRange
-
-
-/***/ }),
-
-/***/ 5728:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-/*
-Copyright spdx-correct.js contributors
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-var parse = __nccwpck_require__(3326)
-var spdxLicenseIds = __nccwpck_require__(5204)
-
-function valid (string) {
-  try {
-    parse(string)
-    return true
-  } catch (error) {
-    return false
-  }
-}
-
-// Common transpositions of license identifier acronyms
-var transpositions = [
-  ['APGL', 'AGPL'],
-  ['Gpl', 'GPL'],
-  ['GLP', 'GPL'],
-  ['APL', 'Apache'],
-  ['ISD', 'ISC'],
-  ['GLP', 'GPL'],
-  ['IST', 'ISC'],
-  ['Claude', 'Clause'],
-  [' or later', '+'],
-  [' International', ''],
-  ['GNU', 'GPL'],
-  ['GUN', 'GPL'],
-  ['+', ''],
-  ['GNU GPL', 'GPL'],
-  ['GNU/GPL', 'GPL'],
-  ['GNU GLP', 'GPL'],
-  ['GNU General Public License', 'GPL'],
-  ['Gnu public license', 'GPL'],
-  ['GNU Public License', 'GPL'],
-  ['GNU GENERAL PUBLIC LICENSE', 'GPL'],
-  ['MTI', 'MIT'],
-  ['Mozilla Public License', 'MPL'],
-  ['Universal Permissive License', 'UPL'],
-  ['WTH', 'WTF'],
-  ['-License', '']
-]
-
-var TRANSPOSED = 0
-var CORRECT = 1
-
-// Simple corrections to nearly valid identifiers.
-var transforms = [
-  // e.g. 'mit'
-  function (argument) {
-    return argument.toUpperCase()
-  },
-  // e.g. 'MIT '
-  function (argument) {
-    return argument.trim()
-  },
-  // e.g. 'M.I.T.'
-  function (argument) {
-    return argument.replace(/\./g, '')
-  },
-  // e.g. 'Apache- 2.0'
-  function (argument) {
-    return argument.replace(/\s+/g, '')
-  },
-  // e.g. 'CC BY 4.0''
-  function (argument) {
-    return argument.replace(/\s+/g, '-')
-  },
-  // e.g. 'LGPLv2.1'
-  function (argument) {
-    return argument.replace('v', '-')
-  },
-  // e.g. 'Apache 2.0'
-  function (argument) {
-    return argument.replace(/,?\s*(\d)/, '-$1')
-  },
-  // e.g. 'GPL 2'
-  function (argument) {
-    return argument.replace(/,?\s*(\d)/, '-$1.0')
-  },
-  // e.g. 'Apache Version 2.0'
-  function (argument) {
-    return argument
-      .replace(/,?\s*(V\.|v\.|V|v|Version|version)\s*(\d)/, '-$2')
-  },
-  // e.g. 'Apache Version 2'
-  function (argument) {
-    return argument
-      .replace(/,?\s*(V\.|v\.|V|v|Version|version)\s*(\d)/, '-$2.0')
-  },
-  // e.g. 'ZLIB'
-  function (argument) {
-    return argument[0].toUpperCase() + argument.slice(1)
-  },
-  // e.g. 'MPL/2.0'
-  function (argument) {
-    return argument.replace('/', '-')
-  },
-  // e.g. 'Apache 2'
-  function (argument) {
-    return argument
-      .replace(/\s*V\s*(\d)/, '-$1')
-      .replace(/(\d)$/, '$1.0')
-  },
-  // e.g. 'GPL-2.0', 'GPL-3.0'
-  function (argument) {
-    if (argument.indexOf('3.0') !== -1) {
-      return argument + '-or-later'
-    } else {
-      return argument + '-only'
-    }
-  },
-  // e.g. 'GPL-2.0-'
-  function (argument) {
-    return argument + 'only'
-  },
-  // e.g. 'GPL2'
-  function (argument) {
-    return argument.replace(/(\d)$/, '-$1.0')
-  },
-  // e.g. 'BSD 3'
-  function (argument) {
-    return argument.replace(/(-| )?(\d)$/, '-$2-Clause')
-  },
-  // e.g. 'BSD clause 3'
-  function (argument) {
-    return argument.replace(/(-| )clause(-| )(\d)/, '-$3-Clause')
-  },
-  // e.g. 'New BSD license'
-  function (argument) {
-    return argument.replace(/\b(Modified|New|Revised)(-| )?BSD((-| )License)?/i, 'BSD-3-Clause')
-  },
-  // e.g. 'Simplified BSD license'
-  function (argument) {
-    return argument.replace(/\bSimplified(-| )?BSD((-| )License)?/i, 'BSD-2-Clause')
-  },
-  // e.g. 'Free BSD license'
-  function (argument) {
-    return argument.replace(/\b(Free|Net)(-| )?BSD((-| )License)?/i, 'BSD-2-Clause-$1BSD')
-  },
-  // e.g. 'Clear BSD license'
-  function (argument) {
-    return argument.replace(/\bClear(-| )?BSD((-| )License)?/i, 'BSD-3-Clause-Clear')
-  },
-  // e.g. 'Old BSD License'
-  function (argument) {
-    return argument.replace(/\b(Old|Original)(-| )?BSD((-| )License)?/i, 'BSD-4-Clause')
-  },
-  // e.g. 'BY-NC-4.0'
-  function (argument) {
-    return 'CC-' + argument
-  },
-  // e.g. 'BY-NC'
-  function (argument) {
-    return 'CC-' + argument + '-4.0'
-  },
-  // e.g. 'Attribution-NonCommercial'
-  function (argument) {
-    return argument
-      .replace('Attribution', 'BY')
-      .replace('NonCommercial', 'NC')
-      .replace('NoDerivatives', 'ND')
-      .replace(/ (\d)/, '-$1')
-      .replace(/ ?International/, '')
-  },
-  // e.g. 'Attribution-NonCommercial'
-  function (argument) {
-    return 'CC-' +
-      argument
-        .replace('Attribution', 'BY')
-        .replace('NonCommercial', 'NC')
-        .replace('NoDerivatives', 'ND')
-        .replace(/ (\d)/, '-$1')
-        .replace(/ ?International/, '') +
-      '-4.0'
-  }
-]
-
-var licensesWithVersions = spdxLicenseIds
-  .map(function (id) {
-    var match = /^(.*)-\d+\.\d+$/.exec(id)
-    return match
-      ? [match[0], match[1]]
-      : [id, null]
-  })
-  .reduce(function (objectMap, item) {
-    var key = item[1]
-    objectMap[key] = objectMap[key] || []
-    objectMap[key].push(item[0])
-    return objectMap
-  }, {})
-
-var licensesWithOneVersion = Object.keys(licensesWithVersions)
-  .map(function makeEntries (key) {
-    return [key, licensesWithVersions[key]]
-  })
-  .filter(function identifySoleVersions (item) {
-    return (
-      // Licenses has just one valid version suffix.
-      item[1].length === 1 &&
-      item[0] !== null &&
-      // APL will be considered Apache, rather than APL-1.0
-      item[0] !== 'APL'
-    )
-  })
-  .map(function createLastResorts (item) {
-    return [item[0], item[1][0]]
-  })
-
-licensesWithVersions = undefined
-
-// If all else fails, guess that strings containing certain substrings
-// meant to identify certain licenses.
-var lastResorts = [
-  ['UNLI', 'Unlicense'],
-  ['WTF', 'WTFPL'],
-  ['2 CLAUSE', 'BSD-2-Clause'],
-  ['2-CLAUSE', 'BSD-2-Clause'],
-  ['3 CLAUSE', 'BSD-3-Clause'],
-  ['3-CLAUSE', 'BSD-3-Clause'],
-  ['AFFERO', 'AGPL-3.0-or-later'],
-  ['AGPL', 'AGPL-3.0-or-later'],
-  ['APACHE', 'Apache-2.0'],
-  ['ARTISTIC', 'Artistic-2.0'],
-  ['Affero', 'AGPL-3.0-or-later'],
-  ['BEER', 'Beerware'],
-  ['BOOST', 'BSL-1.0'],
-  ['BSD', 'BSD-2-Clause'],
-  ['CDDL', 'CDDL-1.1'],
-  ['ECLIPSE', 'EPL-1.0'],
-  ['FUCK', 'WTFPL'],
-  ['GNU', 'GPL-3.0-or-later'],
-  ['LGPL', 'LGPL-3.0-or-later'],
-  ['GPLV1', 'GPL-1.0-only'],
-  ['GPL-1', 'GPL-1.0-only'],
-  ['GPLV2', 'GPL-2.0-only'],
-  ['GPL-2', 'GPL-2.0-only'],
-  ['GPL', 'GPL-3.0-or-later'],
-  ['MIT +NO-FALSE-ATTRIBS', 'MITNFA'],
-  ['MIT', 'MIT'],
-  ['MPL', 'MPL-2.0'],
-  ['X11', 'X11'],
-  ['ZLIB', 'Zlib']
-].concat(licensesWithOneVersion)
-
-var SUBSTRING = 0
-var IDENTIFIER = 1
-
-var validTransformation = function (identifier) {
-  for (var i = 0; i < transforms.length; i++) {
-    var transformed = transforms[i](identifier).trim()
-    if (transformed !== identifier && valid(transformed)) {
-      return transformed
-    }
-  }
-  return null
-}
-
-var validLastResort = function (identifier) {
-  var upperCased = identifier.toUpperCase()
-  for (var i = 0; i < lastResorts.length; i++) {
-    var lastResort = lastResorts[i]
-    if (upperCased.indexOf(lastResort[SUBSTRING]) > -1) {
-      return lastResort[IDENTIFIER]
-    }
-  }
-  return null
-}
-
-var anyCorrection = function (identifier, check) {
-  for (var i = 0; i < transpositions.length; i++) {
-    var transposition = transpositions[i]
-    var transposed = transposition[TRANSPOSED]
-    if (identifier.indexOf(transposed) > -1) {
-      var corrected = identifier.replace(
-        transposed,
-        transposition[CORRECT]
-      )
-      var checked = check(corrected)
-      if (checked !== null) {
-        return checked
-      }
-    }
-  }
-  return null
-}
-
-module.exports = function (identifier, options) {
-  options = options || {}
-  var upgrade = options.upgrade === undefined ? true : !!options.upgrade
-  function postprocess (value) {
-    return upgrade ? upgradeGPLs(value) : value
-  }
-  var validArugment = (
-    typeof identifier === 'string' &&
-    identifier.trim().length !== 0
-  )
-  if (!validArugment) {
-    throw Error('Invalid argument. Expected non-empty string.')
-  }
-  identifier = identifier.trim()
-  if (valid(identifier)) {
-    return postprocess(identifier)
-  }
-  var noPlus = identifier.replace(/\+$/, '').trim()
-  if (valid(noPlus)) {
-    return postprocess(noPlus)
-  }
-  var transformed = validTransformation(identifier)
-  if (transformed !== null) {
-    return postprocess(transformed)
-  }
-  transformed = anyCorrection(identifier, function (argument) {
-    if (valid(argument)) {
-      return argument
-    }
-    return validTransformation(argument)
-  })
-  if (transformed !== null) {
-    return postprocess(transformed)
-  }
-  transformed = validLastResort(identifier)
-  if (transformed !== null) {
-    return postprocess(transformed)
-  }
-  transformed = anyCorrection(identifier, validLastResort)
-  if (transformed !== null) {
-    return postprocess(transformed)
-  }
-  return null
-}
-
-function upgradeGPLs (value) {
-  if ([
-    'GPL-1.0', 'LGPL-1.0', 'AGPL-1.0',
-    'GPL-2.0', 'LGPL-2.0', 'AGPL-2.0',
-    'LGPL-2.1'
-  ].indexOf(value) !== -1) {
-    return value + '-only'
-  } else if ([
-    'GPL-1.0+', 'GPL-2.0+', 'GPL-3.0+',
-    'LGPL-2.0+', 'LGPL-2.1+', 'LGPL-3.0+',
-    'AGPL-1.0+', 'AGPL-3.0+'
-  ].indexOf(value) !== -1) {
-    return value.replace(/\+$/, '-or-later')
-  } else if (['GPL-3.0', 'LGPL-3.0', 'AGPL-3.0'].indexOf(value) !== -1) {
-    return value + '-or-later'
-  } else {
-    return value
-  }
-}
-
-
-/***/ }),
-
-/***/ 3326:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-var scan = __nccwpck_require__(9230)
-var parse = __nccwpck_require__(5501)
-
-module.exports = function (source) {
-  return parse(scan(source))
-}
-
-
-/***/ }),
-
-/***/ 5501:
-/***/ ((module) => {
-
-"use strict";
-
-
-// The ABNF grammar in the spec is totally ambiguous.
-//
-// This parser follows the operator precedence defined in the
-// `Order of Precedence and Parentheses` section.
-
-module.exports = function (tokens) {
-  var index = 0
-
-  function hasMore () {
-    return index < tokens.length
-  }
-
-  function token () {
-    return hasMore() ? tokens[index] : null
-  }
-
-  function next () {
-    if (!hasMore()) {
-      throw new Error()
-    }
-    index++
-  }
-
-  function parseOperator (operator) {
-    var t = token()
-    if (t && t.type === 'OPERATOR' && operator === t.string) {
-      next()
-      return t.string
-    }
-  }
-
-  function parseWith () {
-    if (parseOperator('WITH')) {
-      var t = token()
-      if (t && t.type === 'EXCEPTION') {
-        next()
-        return t.string
-      }
-      throw new Error('Expected exception after `WITH`')
-    }
-  }
-
-  function parseLicenseRef () {
-    // TODO: Actually, everything is concatenated into one string
-    // for backward-compatibility but it could be better to return
-    // a nice structure.
-    var begin = index
-    var string = ''
-    var t = token()
-    if (t.type === 'DOCUMENTREF') {
-      next()
-      string += 'DocumentRef-' + t.string + ':'
-      if (!parseOperator(':')) {
-        throw new Error('Expected `:` after `DocumentRef-...`')
-      }
-    }
-    t = token()
-    if (t.type === 'LICENSEREF') {
-      next()
-      string += 'LicenseRef-' + t.string
-      return { license: string }
-    }
-    index = begin
-  }
-
-  function parseLicense () {
-    var t = token()
-    if (t && t.type === 'LICENSE') {
-      next()
-      var node = { license: t.string }
-      if (parseOperator('+')) {
-        node.plus = true
-      }
-      var exception = parseWith()
-      if (exception) {
-        node.exception = exception
-      }
-      return node
-    }
-  }
-
-  function parseParenthesizedExpression () {
-    var left = parseOperator('(')
-    if (!left) {
-      return
-    }
-
-    var expr = parseExpression()
-
-    if (!parseOperator(')')) {
-      throw new Error('Expected `)`')
-    }
-
-    return expr
-  }
-
-  function parseAtom () {
-    return (
-      parseParenthesizedExpression() ||
-      parseLicenseRef() ||
-      parseLicense()
-    )
-  }
-
-  function makeBinaryOpParser (operator, nextParser) {
-    return function parseBinaryOp () {
-      var left = nextParser()
-      if (!left) {
-        return
-      }
-
-      if (!parseOperator(operator)) {
-        return left
-      }
-
-      var right = parseBinaryOp()
-      if (!right) {
-        throw new Error('Expected expression')
-      }
-      return {
-        left: left,
-        conjunction: operator.toLowerCase(),
-        right: right
-      }
-    }
-  }
-
-  var parseAnd = makeBinaryOpParser('AND', parseAtom)
-  var parseExpression = makeBinaryOpParser('OR', parseAnd)
-
-  var node = parseExpression()
-  if (!node || hasMore()) {
-    throw new Error('Syntax error')
-  }
-  return node
-}
-
-
-/***/ }),
-
-/***/ 9230:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-var licenses = []
-  .concat(__nccwpck_require__(5204))
-  .concat(__nccwpck_require__(3389))
-var exceptions = __nccwpck_require__(3988)
-
-module.exports = function (source) {
-  var index = 0
-
-  function hasMore () {
-    return index < source.length
-  }
-
-  // `value` can be a regexp or a string.
-  // If it is recognized, the matching source string is returned and
-  // the index is incremented. Otherwise `undefined` is returned.
-  function read (value) {
-    if (value instanceof RegExp) {
-      var chars = source.slice(index)
-      var match = chars.match(value)
-      if (match) {
-        index += match[0].length
-        return match[0]
-      }
-    } else {
-      if (source.indexOf(value, index) === index) {
-        index += value.length
-        return value
-      }
-    }
-  }
-
-  function skipWhitespace () {
-    read(/[ ]*/)
-  }
-
-  function operator () {
-    var string
-    var possibilities = ['WITH', 'AND', 'OR', '(', ')', ':', '+']
-    for (var i = 0; i < possibilities.length; i++) {
-      string = read(possibilities[i])
-      if (string) {
-        break
-      }
-    }
-
-    if (string === '+' && index > 1 && source[index - 2] === ' ') {
-      throw new Error('Space before `+`')
-    }
-
-    return string && {
-      type: 'OPERATOR',
-      string: string
-    }
-  }
-
-  function idstring () {
-    return read(/[A-Za-z0-9-.]+/)
-  }
-
-  function expectIdstring () {
-    var string = idstring()
-    if (!string) {
-      throw new Error('Expected idstring at offset ' + index)
-    }
-    return string
-  }
-
-  function documentRef () {
-    if (read('DocumentRef-')) {
-      var string = expectIdstring()
-      return { type: 'DOCUMENTREF', string: string }
-    }
-  }
-
-  function licenseRef () {
-    if (read('LicenseRef-')) {
-      var string = expectIdstring()
-      return { type: 'LICENSEREF', string: string }
-    }
-  }
-
-  function identifier () {
-    var begin = index
-    var string = idstring()
-
-    if (licenses.indexOf(string) !== -1) {
-      return {
-        type: 'LICENSE',
-        string: string
-      }
-    } else if (exceptions.indexOf(string) !== -1) {
-      return {
-        type: 'EXCEPTION',
-        string: string
-      }
-    }
-
-    index = begin
-  }
-
-  // Tries to read the next token. Returns `undefined` if no token is
-  // recognized.
-  function parseToken () {
-    // Ordering matters
-    return (
-      operator() ||
-      documentRef() ||
-      licenseRef() ||
-      identifier()
-    )
-  }
-
-  var tokens = []
-  while (hasMore()) {
-    skipWhitespace()
-    if (!hasMore()) {
-      break
-    }
-
-    var token = parseToken()
-    if (!token) {
-      throw new Error('Unexpected `' + source[index] +
-                      '` at offset ' + index)
-    }
-
-    tokens.push(token)
-  }
-  return tokens
-}
 
 
 /***/ }),
@@ -23511,99 +23184,6 @@ exports.debug = debug; // for test
 
 /***/ }),
 
-/***/ 6821:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var parse = __nccwpck_require__(3326);
-var correct = __nccwpck_require__(5728);
-
-var genericWarning = (
-  'license should be ' +
-  'a valid SPDX license expression (without "LicenseRef"), ' +
-  '"UNLICENSED", or ' +
-  '"SEE LICENSE IN <filename>"'
-);
-
-var fileReferenceRE = /^SEE LICEN[CS]E IN (.+)$/;
-
-function startsWith(prefix, string) {
-  return string.slice(0, prefix.length) === prefix;
-}
-
-function usesLicenseRef(ast) {
-  if (ast.hasOwnProperty('license')) {
-    var license = ast.license;
-    return (
-      startsWith('LicenseRef', license) ||
-      startsWith('DocumentRef', license)
-    );
-  } else {
-    return (
-      usesLicenseRef(ast.left) ||
-      usesLicenseRef(ast.right)
-    );
-  }
-}
-
-module.exports = function(argument) {
-  var ast;
-
-  try {
-    ast = parse(argument);
-  } catch (e) {
-    var match
-    if (
-      argument === 'UNLICENSED' ||
-      argument === 'UNLICENCED'
-    ) {
-      return {
-        validForOldPackages: true,
-        validForNewPackages: true,
-        unlicensed: true
-      };
-    } else if (match = fileReferenceRE.exec(argument)) {
-      return {
-        validForOldPackages: true,
-        validForNewPackages: true,
-        inFile: match[1]
-      };
-    } else {
-      var result = {
-        validForOldPackages: false,
-        validForNewPackages: false,
-        warnings: [genericWarning]
-      };
-      if (argument.trim().length !== 0) {
-        var corrected = correct(argument);
-        if (corrected) {
-          result.warnings.push(
-            'license is similar to the valid expression "' + corrected + '"'
-          );
-        }
-      }
-      return result;
-    }
-  }
-
-  if (usesLicenseRef(ast)) {
-    return {
-      validForNewPackages: false,
-      validForOldPackages: false,
-      spdx: true,
-      warnings: [genericWarning]
-    };
-  } else {
-    return {
-      validForNewPackages: true,
-      validForOldPackages: true,
-      spdx: true
-    };
-  }
-};
-
-
-/***/ }),
-
 /***/ 7825:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -23612,7 +23192,7 @@ module.exports = function(argument) {
 const { builtinModules: builtins } = __nccwpck_require__(3339)
 
 var scopedPackagePattern = new RegExp('^(?:@([^/]+?)[/])?([^/]+?)$')
-var blacklist = [
+var exclusionList = [
   'node_modules',
   'favicon.ico',
 ]
@@ -23640,7 +23220,7 @@ function validate (name) {
     errors.push('name length must be greater than zero')
   }
 
-  if (name.match(/^\./)) {
+  if (name.startsWith('.')) {
     errors.push('name cannot start with a period')
   }
 
@@ -23653,9 +23233,9 @@ function validate (name) {
   }
 
   // No funny business
-  blacklist.forEach(function (blacklistedName) {
-    if (name.toLowerCase() === blacklistedName) {
-      errors.push(blacklistedName + ' is a blacklisted name')
+  exclusionList.forEach(function (excludedName) {
+    if (name.toLowerCase() === excludedName) {
+      errors.push(excludedName + ' is not a valid package name')
     }
   })
 
@@ -23685,6 +23265,11 @@ function validate (name) {
     if (nameMatch) {
       var user = nameMatch[1]
       var pkg = nameMatch[2]
+
+      if (pkg.startsWith('.')) {
+        errors.push('name cannot start with a period')
+      }
+
       if (encodeURIComponent(user) === user && encodeURIComponent(pkg) === pkg) {
         return done(warnings, errors)
       }
@@ -24285,14 +23870,6 @@ try {
 
 /***/ }),
 
-/***/ 1132:
-/***/ ((module) => {
-
-module.exports = eval("require")("bluebird");
-
-
-/***/ }),
-
 /***/ 2613:
 /***/ ((module) => {
 
@@ -24397,6 +23974,14 @@ module.exports = require("node:fs/promises");
 
 /***/ }),
 
+/***/ 8995:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:module");
+
+/***/ }),
+
 /***/ 8161:
 /***/ ((module) => {
 
@@ -24410,6 +23995,14 @@ module.exports = require("node:os");
 
 "use strict";
 module.exports = require("node:path");
+
+/***/ }),
+
+/***/ 8152:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:path/win32");
 
 /***/ }),
 
@@ -24498,6 +24091,275 @@ module.exports = require("url");
 
 "use strict";
 module.exports = require("util");
+
+/***/ }),
+
+/***/ 516:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.range = exports.balanced = void 0;
+const balanced = (a, b, str) => {
+    const ma = a instanceof RegExp ? maybeMatch(a, str) : a;
+    const mb = b instanceof RegExp ? maybeMatch(b, str) : b;
+    const r = ma !== null && mb != null && (0, exports.range)(ma, mb, str);
+    return (r && {
+        start: r[0],
+        end: r[1],
+        pre: str.slice(0, r[0]),
+        body: str.slice(r[0] + ma.length, r[1]),
+        post: str.slice(r[1] + mb.length),
+    });
+};
+exports.balanced = balanced;
+const maybeMatch = (reg, str) => {
+    const m = str.match(reg);
+    return m ? m[0] : null;
+};
+const range = (a, b, str) => {
+    let begs, beg, left, right = undefined, result;
+    let ai = str.indexOf(a);
+    let bi = str.indexOf(b, ai + 1);
+    let i = ai;
+    if (ai >= 0 && bi > 0) {
+        if (a === b) {
+            return [ai, bi];
+        }
+        begs = [];
+        left = str.length;
+        while (i >= 0 && !result) {
+            if (i === ai) {
+                begs.push(i);
+                ai = str.indexOf(a, i + 1);
+            }
+            else if (begs.length === 1) {
+                const r = begs.pop();
+                if (r !== undefined)
+                    result = [r, bi];
+            }
+            else {
+                beg = begs.pop();
+                if (beg !== undefined && beg < left) {
+                    left = beg;
+                    right = bi;
+                }
+                bi = str.indexOf(b, i + 1);
+            }
+            i = ai < bi && ai >= 0 ? ai : bi;
+        }
+        if (begs.length && right !== undefined) {
+            result = [left, right];
+        }
+    }
+    return result;
+};
+exports.range = range;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 1215:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.expand = expand;
+const balanced_match_1 = __nccwpck_require__(516);
+const escSlash = '\0SLASH' + Math.random() + '\0';
+const escOpen = '\0OPEN' + Math.random() + '\0';
+const escClose = '\0CLOSE' + Math.random() + '\0';
+const escComma = '\0COMMA' + Math.random() + '\0';
+const escPeriod = '\0PERIOD' + Math.random() + '\0';
+const escSlashPattern = new RegExp(escSlash, 'g');
+const escOpenPattern = new RegExp(escOpen, 'g');
+const escClosePattern = new RegExp(escClose, 'g');
+const escCommaPattern = new RegExp(escComma, 'g');
+const escPeriodPattern = new RegExp(escPeriod, 'g');
+const slashPattern = /\\\\/g;
+const openPattern = /\\{/g;
+const closePattern = /\\}/g;
+const commaPattern = /\\,/g;
+const periodPattern = /\\./g;
+function numeric(str) {
+    return !isNaN(str) ? parseInt(str, 10) : str.charCodeAt(0);
+}
+function escapeBraces(str) {
+    return str
+        .replace(slashPattern, escSlash)
+        .replace(openPattern, escOpen)
+        .replace(closePattern, escClose)
+        .replace(commaPattern, escComma)
+        .replace(periodPattern, escPeriod);
+}
+function unescapeBraces(str) {
+    return str
+        .replace(escSlashPattern, '\\')
+        .replace(escOpenPattern, '{')
+        .replace(escClosePattern, '}')
+        .replace(escCommaPattern, ',')
+        .replace(escPeriodPattern, '.');
+}
+/**
+ * Basically just str.split(","), but handling cases
+ * where we have nested braced sections, which should be
+ * treated as individual members, like {a,{b,c},d}
+ */
+function parseCommaParts(str) {
+    if (!str) {
+        return [''];
+    }
+    const parts = [];
+    const m = (0, balanced_match_1.balanced)('{', '}', str);
+    if (!m) {
+        return str.split(',');
+    }
+    const { pre, body, post } = m;
+    const p = pre.split(',');
+    p[p.length - 1] += '{' + body + '}';
+    const postParts = parseCommaParts(post);
+    if (post.length) {
+        ;
+        p[p.length - 1] += postParts.shift();
+        p.push.apply(p, postParts);
+    }
+    parts.push.apply(parts, p);
+    return parts;
+}
+function expand(str) {
+    if (!str) {
+        return [];
+    }
+    // I don't know why Bash 4.3 does this, but it does.
+    // Anything starting with {} will have the first two bytes preserved
+    // but *only* at the top level, so {},a}b will not expand to anything,
+    // but a{},b}c will be expanded to [a}c,abc].
+    // One could argue that this is a bug in Bash, but since the goal of
+    // this module is to match Bash's rules, we escape a leading {}
+    if (str.slice(0, 2) === '{}') {
+        str = '\\{\\}' + str.slice(2);
+    }
+    return expand_(escapeBraces(str), true).map(unescapeBraces);
+}
+function embrace(str) {
+    return '{' + str + '}';
+}
+function isPadded(el) {
+    return /^-?0\d/.test(el);
+}
+function lte(i, y) {
+    return i <= y;
+}
+function gte(i, y) {
+    return i >= y;
+}
+function expand_(str, isTop) {
+    /** @type {string[]} */
+    const expansions = [];
+    const m = (0, balanced_match_1.balanced)('{', '}', str);
+    if (!m)
+        return [str];
+    // no need to expand pre, since it is guaranteed to be free of brace-sets
+    const pre = m.pre;
+    const post = m.post.length ? expand_(m.post, false) : [''];
+    if (/\$$/.test(m.pre)) {
+        for (let k = 0; k < post.length; k++) {
+            const expansion = pre + '{' + m.body + '}' + post[k];
+            expansions.push(expansion);
+        }
+    }
+    else {
+        const isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
+        const isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
+        const isSequence = isNumericSequence || isAlphaSequence;
+        const isOptions = m.body.indexOf(',') >= 0;
+        if (!isSequence && !isOptions) {
+            // {a},b}
+            if (m.post.match(/,(?!,).*\}/)) {
+                str = m.pre + '{' + m.body + escClose + m.post;
+                return expand_(str);
+            }
+            return [str];
+        }
+        let n;
+        if (isSequence) {
+            n = m.body.split(/\.\./);
+        }
+        else {
+            n = parseCommaParts(m.body);
+            if (n.length === 1 && n[0] !== undefined) {
+                // x{{a,b}}y ==> x{a}y x{b}y
+                n = expand_(n[0], false).map(embrace);
+                //XXX is this necessary? Can't seem to hit it in tests.
+                /* c8 ignore start */
+                if (n.length === 1) {
+                    return post.map(p => m.pre + n[0] + p);
+                }
+                /* c8 ignore stop */
+            }
+        }
+        // at this point, n is the parts, and we know it's not a comma set
+        // with a single entry.
+        let N;
+        if (isSequence && n[0] !== undefined && n[1] !== undefined) {
+            const x = numeric(n[0]);
+            const y = numeric(n[1]);
+            const width = Math.max(n[0].length, n[1].length);
+            let incr = n.length === 3 && n[2] !== undefined ? Math.abs(numeric(n[2])) : 1;
+            let test = lte;
+            const reverse = y < x;
+            if (reverse) {
+                incr *= -1;
+                test = gte;
+            }
+            const pad = n.some(isPadded);
+            N = [];
+            for (let i = x; test(i, y); i += incr) {
+                let c;
+                if (isAlphaSequence) {
+                    c = String.fromCharCode(i);
+                    if (c === '\\') {
+                        c = '';
+                    }
+                }
+                else {
+                    c = String(i);
+                    if (pad) {
+                        const need = width - c.length;
+                        if (need > 0) {
+                            const z = new Array(need + 1).join('0');
+                            if (i < 0) {
+                                c = '-' + z + c.slice(1);
+                            }
+                            else {
+                                c = z + c;
+                            }
+                        }
+                    }
+                }
+                N.push(c);
+            }
+        }
+        else {
+            N = [];
+            for (let j = 0; j < n.length; j++) {
+                N.push.apply(N, expand_(n[j], false));
+            }
+        }
+        for (let j = 0; j < N.length; j++) {
+            for (let k = 0; k < post.length; k++) {
+                const expansion = pre + N[j] + post[k];
+                if (!isTop || isSequence || expansion) {
+                    expansions.push(expansion);
+                }
+            }
+        }
+    }
+    return expansions;
+}
+//# sourceMappingURL=index.js.map
 
 /***/ }),
 
@@ -26361,7 +26223,9 @@ class AST {
         if (this.#root === this)
             this.#fillNegs();
         if (!this.type) {
-            const noEmpty = this.isStart() && this.isEnd();
+            const noEmpty = this.isStart() &&
+                this.isEnd() &&
+                !this.#parts.some(s => typeof s !== 'string');
             const src = this.#parts
                 .map(p => {
                 const [re, _, hasMagic, uflag] = typeof p === 'string'
@@ -26517,10 +26381,7 @@ class AST {
                 }
             }
             if (c === '*') {
-                if (noEmpty && glob === '*')
-                    re += starNoEmpty;
-                else
-                    re += star;
+                re += noEmpty && glob === '*' ? starNoEmpty : star;
                 hasMagic = true;
                 continue;
             }
@@ -26708,16 +26569,24 @@ exports.escape = void 0;
 /**
  * Escape all magic characters in a glob pattern.
  *
- * If the {@link windowsPathsNoEscape | GlobOptions.windowsPathsNoEscape}
+ * If the {@link MinimatchOptions.windowsPathsNoEscape}
  * option is used, then characters are escaped by wrapping in `[]`, because
  * a magic character wrapped in a character class can only be satisfied by
  * that exact character.  In this mode, `\` is _not_ escaped, because it is
  * not interpreted as a magic character, but instead as a path separator.
+ *
+ * If the {@link MinimatchOptions.magicalBraces} option is used,
+ * then braces (`{` and `}`) will be escaped.
  */
-const escape = (s, { windowsPathsNoEscape = false, } = {}) => {
+const escape = (s, { windowsPathsNoEscape = false, magicalBraces = false, } = {}) => {
     // don't need to escape +@! because we escape the parens
     // that make those magic, and escaping ! as [!] isn't valid,
     // because [!]] is a valid glob class meaning not ']'.
+    if (magicalBraces) {
+        return windowsPathsNoEscape
+            ? s.replace(/[?*()[\]{}]/g, '[$&]')
+            : s.replace(/[?*()[\]\\{}]/g, '\\$&');
+    }
     return windowsPathsNoEscape
         ? s.replace(/[?*()[\]]/g, '[$&]')
         : s.replace(/[?*()[\]\\]/g, '\\$&');
@@ -26728,16 +26597,13 @@ exports.escape = escape;
 /***/ }),
 
 /***/ 5802:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
-const brace_expansion_1 = __importDefault(__nccwpck_require__(4691));
+const brace_expansion_1 = __nccwpck_require__(1215);
 const assert_valid_pattern_js_1 = __nccwpck_require__(1666);
 const ast_js_1 = __nccwpck_require__(4370);
 const escape_js_1 = __nccwpck_require__(2019);
@@ -26890,7 +26756,7 @@ const braceExpand = (pattern, options = {}) => {
         // shortcut. no need to expand.
         return [pattern];
     }
-    return (0, brace_expansion_1.default)(pattern);
+    return (0, brace_expansion_1.expand)(pattern);
 };
 exports.braceExpand = braceExpand;
 exports.minimatch.braceExpand = exports.braceExpand;
@@ -27376,7 +27242,7 @@ class Minimatch {
             }
         }
         // resolve and reduce . and .. portions in the file as well.
-        // dont' need to do the second phase, because it's only one string[]
+        // don't need to do the second phase, because it's only one string[]
         const { optimizationLevel = 1 } = this.options;
         if (optimizationLevel >= 2) {
             file = this.levelTwoFileOptimize(file);
@@ -27629,14 +27495,25 @@ class Minimatch {
                     }
                 }
                 else if (next === undefined) {
-                    pp[i - 1] = prev + '(?:\\/|' + twoStar + ')?';
+                    pp[i - 1] = prev + '(?:\\/|\\/' + twoStar + ')?';
                 }
                 else if (next !== exports.GLOBSTAR) {
                     pp[i - 1] = prev + '(?:\\/|\\/' + twoStar + '\\/)' + next;
                     pp[i + 1] = exports.GLOBSTAR;
                 }
             });
-            return pp.filter(p => p !== exports.GLOBSTAR).join('/');
+            const filtered = pp.filter(p => p !== exports.GLOBSTAR);
+            // For partial matches, we need to make the pattern match
+            // any prefix of the full path. We do this by generating
+            // alternative patterns that match progressively longer prefixes.
+            if (this.partial && filtered.length >= 1) {
+                const prefixes = [];
+                for (let i = 1; i <= filtered.length; i++) {
+                    prefixes.push(filtered.slice(0, i).join('/'));
+                }
+                return '(?:' + prefixes.join('|') + ')';
+            }
+            return filtered.join('/');
         })
             .join('|');
         // need to wrap in parens if we had more than one thing with |,
@@ -27645,6 +27522,10 @@ class Minimatch {
         // must match entire pattern
         // ending in a * or ** will make it less strict.
         re = '^' + open + re + close + '$';
+        // In partial mode, '/' should always match as it's a valid prefix for any pattern
+        if (this.partial) {
+            re = '^(?:\\/|' + open + re.slice(1, -1) + close + ')$';
+        }
         // can match anything, as long as it's not this.
         if (this.negate)
             re = '^(?!' + re + ').+$';
@@ -27761,21 +27642,35 @@ exports.unescape = void 0;
 /**
  * Un-escape a string that has been escaped with {@link escape}.
  *
- * If the {@link windowsPathsNoEscape} option is used, then square-brace
- * escapes are removed, but not backslash escapes.  For example, it will turn
- * the string `'[*]'` into `*`, but it will not turn `'\\*'` into `'*'`,
- * becuase `\` is a path separator in `windowsPathsNoEscape` mode.
+ * If the {@link MinimatchOptions.windowsPathsNoEscape} option is used, then
+ * square-bracket escapes are removed, but not backslash escapes.
  *
- * When `windowsPathsNoEscape` is not set, then both brace escapes and
+ * For example, it will turn the string `'[*]'` into `*`, but it will not
+ * turn `'\\*'` into `'*'`, because `\` is a path separator in
+ * `windowsPathsNoEscape` mode.
+ *
+ * When `windowsPathsNoEscape` is not set, then both square-bracket escapes and
  * backslash escapes are removed.
  *
  * Slashes (and backslashes in `windowsPathsNoEscape` mode) cannot be escaped
  * or unescaped.
+ *
+ * When `magicalBraces` is not set, escapes of braces (`{` and `}`) will not be
+ * unescaped.
  */
-const unescape = (s, { windowsPathsNoEscape = false, } = {}) => {
+const unescape = (s, { windowsPathsNoEscape = false, magicalBraces = true, } = {}) => {
+    if (magicalBraces) {
+        return windowsPathsNoEscape
+            ? s.replace(/\[([^\/\\])\]/g, '$1')
+            : s
+                .replace(/((?!\\).|^)\[([^\/\\])\]/g, '$1$2')
+                .replace(/\\([^\/])/g, '$1');
+    }
     return windowsPathsNoEscape
-        ? s.replace(/\[([^\/\\])\]/g, '$1')
-        : s.replace(/((?!\\).|^)\[([^\/\\])\]/g, '$1$2').replace(/\\([^\/])/g, '$1');
+        ? s.replace(/\[([^\/\\{}])\]/g, '$1')
+        : s
+            .replace(/((?!\\).|^)\[([^\/\\{}])\]/g, '$1$2')
+            .replace(/\\([^\/{}])/g, '$1');
 };
 exports.unescape = unescape;
 //# sourceMappingURL=unescape.js.map
@@ -29033,18 +28928,20 @@ const checkStat = (stat, path, options) => stat.isFile() && checkPathExt(path, o
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.LRUCache = void 0;
-const perf = typeof performance === 'object' &&
+const defaultPerf = (typeof performance === 'object' &&
     performance &&
-    typeof performance.now === 'function'
-    ? performance
+    typeof performance.now === 'function') ?
+    performance
     : Date;
 const warned = new Set();
 /* c8 ignore start */
-const PROCESS = (typeof process === 'object' && !!process ? process : {});
+const PROCESS = (typeof process === 'object' && !!process ?
+    process
+    : {});
 /* c8 ignore start */
 const emitWarning = (msg, type, code, fn) => {
-    typeof PROCESS.emitWarning === 'function'
-        ? PROCESS.emitWarning(msg, type, code, fn)
+    typeof PROCESS.emitWarning === 'function' ?
+        PROCESS.emitWarning(msg, type, code, fn)
         : console.error(`[${code}] ${type}: ${msg}`);
 };
 let AC = globalThis.AbortController;
@@ -29108,16 +29005,11 @@ const isPosInt = (n) => n && n === Math.floor(n) && n > 0 && isFinite(n);
 // zeroes at init time is brutal when you get that big.
 // But why not be complete?
 // Maybe in the future, these limits will have expanded.
-const getUintArray = (max) => !isPosInt(max)
-    ? null
-    : max <= Math.pow(2, 8)
-        ? Uint8Array
-        : max <= Math.pow(2, 16)
-            ? Uint16Array
-            : max <= Math.pow(2, 32)
-                ? Uint32Array
-                : max <= Number.MAX_SAFE_INTEGER
-                    ? ZeroArray
+const getUintArray = (max) => !isPosInt(max) ? null
+    : max <= Math.pow(2, 8) ? Uint8Array
+        : max <= Math.pow(2, 16) ? Uint16Array
+            : max <= Math.pow(2, 32) ? Uint32Array
+                : max <= Number.MAX_SAFE_INTEGER ? ZeroArray
                     : null;
 /* c8 ignore stop */
 class ZeroArray extends Array {
@@ -29176,9 +29068,17 @@ class LRUCache {
     #max;
     #maxSize;
     #dispose;
+    #onInsert;
     #disposeAfter;
     #fetchMethod;
     #memoMethod;
+    #perf;
+    /**
+     * {@link LRUCache.OptionsBase.perf}
+     */
+    get perf() {
+        return this.#perf;
+    }
     /**
      * {@link LRUCache.OptionsBase.ttl}
      */
@@ -29254,9 +29154,11 @@ class LRUCache {
     #sizes;
     #starts;
     #ttls;
+    #autopurgeTimers;
     #hasDispose;
     #hasFetchMethod;
     #hasDisposeAfter;
+    #hasOnInsert;
     /**
      * Do not call this method unless you need to inspect the
      * inner workings of the cache.  If anything returned by this
@@ -29271,6 +29173,7 @@ class LRUCache {
             // properties
             starts: c.#starts,
             ttls: c.#ttls,
+            autopurgeTimers: c.#autopurgeTimers,
             sizes: c.#sizes,
             keyMap: c.#keyMap,
             keyList: c.#keyList,
@@ -29334,13 +29237,25 @@ class LRUCache {
         return this.#dispose;
     }
     /**
+     * {@link LRUCache.OptionsBase.onInsert} (read-only)
+     */
+    get onInsert() {
+        return this.#onInsert;
+    }
+    /**
      * {@link LRUCache.OptionsBase.disposeAfter} (read-only)
      */
     get disposeAfter() {
         return this.#disposeAfter;
     }
     constructor(options) {
-        const { max = 0, ttl, ttlResolution = 1, ttlAutopurge, updateAgeOnGet, updateAgeOnHas, allowStale, dispose, disposeAfter, noDisposeOnSet, noUpdateTTL, maxSize = 0, maxEntrySize = 0, sizeCalculation, fetchMethod, memoMethod, noDeleteOnFetchRejection, noDeleteOnStaleGet, allowStaleOnFetchRejection, allowStaleOnFetchAbort, ignoreFetchAbort, } = options;
+        const { max = 0, ttl, ttlResolution = 1, ttlAutopurge, updateAgeOnGet, updateAgeOnHas, allowStale, dispose, onInsert, disposeAfter, noDisposeOnSet, noUpdateTTL, maxSize = 0, maxEntrySize = 0, sizeCalculation, fetchMethod, memoMethod, noDeleteOnFetchRejection, noDeleteOnStaleGet, allowStaleOnFetchRejection, allowStaleOnFetchAbort, ignoreFetchAbort, perf, } = options;
+        if (perf !== undefined) {
+            if (typeof perf?.now !== 'function') {
+                throw new TypeError('perf option must have a now() method if specified');
+            }
+        }
+        this.#perf = perf ?? defaultPerf;
         if (max !== 0 && !isPosInt(max)) {
             throw new TypeError('max option must be a nonnegative integer');
         }
@@ -29360,13 +29275,11 @@ class LRUCache {
                 throw new TypeError('sizeCalculation set to non-function');
             }
         }
-        if (memoMethod !== undefined &&
-            typeof memoMethod !== 'function') {
+        if (memoMethod !== undefined && typeof memoMethod !== 'function') {
             throw new TypeError('memoMethod must be a function if defined');
         }
         this.#memoMethod = memoMethod;
-        if (fetchMethod !== undefined &&
-            typeof fetchMethod !== 'function') {
+        if (fetchMethod !== undefined && typeof fetchMethod !== 'function') {
             throw new TypeError('fetchMethod must be a function if specified');
         }
         this.#fetchMethod = fetchMethod;
@@ -29384,6 +29297,9 @@ class LRUCache {
         if (typeof dispose === 'function') {
             this.#dispose = dispose;
         }
+        if (typeof onInsert === 'function') {
+            this.#onInsert = onInsert;
+        }
         if (typeof disposeAfter === 'function') {
             this.#disposeAfter = disposeAfter;
             this.#disposed = [];
@@ -29393,6 +29309,7 @@ class LRUCache {
             this.#disposed = undefined;
         }
         this.#hasDispose = !!this.#dispose;
+        this.#hasOnInsert = !!this.#onInsert;
         this.#hasDisposeAfter = !!this.#disposeAfter;
         this.noDisposeOnSet = !!noDisposeOnSet;
         this.noUpdateTTL = !!noUpdateTTL;
@@ -29417,9 +29334,7 @@ class LRUCache {
         this.updateAgeOnGet = !!updateAgeOnGet;
         this.updateAgeOnHas = !!updateAgeOnHas;
         this.ttlResolution =
-            isPosInt(ttlResolution) || ttlResolution === 0
-                ? ttlResolution
-                : 1;
+            isPosInt(ttlResolution) || ttlResolution === 0 ? ttlResolution : 1;
         this.ttlAutopurge = !!ttlAutopurge;
         this.ttl = ttl || 0;
         if (this.ttl) {
@@ -29454,10 +29369,21 @@ class LRUCache {
         const starts = new ZeroArray(this.#max);
         this.#ttls = ttls;
         this.#starts = starts;
-        this.#setItemTTL = (index, ttl, start = perf.now()) => {
+        const purgeTimers = this.ttlAutopurge ?
+            new Array(this.#max)
+            : undefined;
+        this.#autopurgeTimers = purgeTimers;
+        this.#setItemTTL = (index, ttl, start = this.#perf.now()) => {
             starts[index] = ttl !== 0 ? start : 0;
             ttls[index] = ttl;
-            if (ttl !== 0 && this.ttlAutopurge) {
+            // clear out the purge timer if we're setting TTL to 0, and
+            // previously had a ttl purge timer running, so it doesn't
+            // fire unnecessarily.
+            if (purgeTimers?.[index]) {
+                clearTimeout(purgeTimers[index]);
+                purgeTimers[index] = undefined;
+            }
+            if (ttl !== 0 && purgeTimers) {
                 const t = setTimeout(() => {
                     if (this.#isStale(index)) {
                         this.#delete(this.#keyList[index], 'expire');
@@ -29469,10 +29395,11 @@ class LRUCache {
                     t.unref();
                 }
                 /* c8 ignore stop */
+                purgeTimers[index] = t;
             }
         };
         this.#updateItemAge = index => {
-            starts[index] = ttls[index] !== 0 ? perf.now() : 0;
+            starts[index] = ttls[index] !== 0 ? this.#perf.now() : 0;
         };
         this.#statusTTL = (status, index) => {
             if (ttls[index]) {
@@ -29492,7 +29419,7 @@ class LRUCache {
         // that costly call repeatedly.
         let cachedNow = 0;
         const getNow = () => {
-            const n = perf.now();
+            const n = this.#perf.now();
             if (this.ttlResolution > 0) {
                 cachedNow = n;
                 const t = setTimeout(() => (cachedNow = 0), this.ttlResolution);
@@ -29660,8 +29587,7 @@ class LRUCache {
     *keys() {
         for (const i of this.#indexes()) {
             const k = this.#keyList[i];
-            if (k !== undefined &&
-                !this.#isBackgroundFetch(this.#valList[i])) {
+            if (k !== undefined && !this.#isBackgroundFetch(this.#valList[i])) {
                 yield k;
             }
         }
@@ -29675,8 +29601,7 @@ class LRUCache {
     *rkeys() {
         for (const i of this.#rindexes()) {
             const k = this.#keyList[i];
-            if (k !== undefined &&
-                !this.#isBackgroundFetch(this.#valList[i])) {
+            if (k !== undefined && !this.#isBackgroundFetch(this.#valList[i])) {
                 yield k;
             }
         }
@@ -29688,8 +29613,7 @@ class LRUCache {
     *values() {
         for (const i of this.#indexes()) {
             const v = this.#valList[i];
-            if (v !== undefined &&
-                !this.#isBackgroundFetch(this.#valList[i])) {
+            if (v !== undefined && !this.#isBackgroundFetch(this.#valList[i])) {
                 yield this.#valList[i];
             }
         }
@@ -29703,8 +29627,7 @@ class LRUCache {
     *rvalues() {
         for (const i of this.#rindexes()) {
             const v = this.#valList[i];
-            if (v !== undefined &&
-                !this.#isBackgroundFetch(this.#valList[i])) {
+            if (v !== undefined && !this.#isBackgroundFetch(this.#valList[i])) {
                 yield this.#valList[i];
             }
         }
@@ -29729,9 +29652,7 @@ class LRUCache {
     find(fn, getOptions = {}) {
         for (const i of this.#indexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             if (fn(value, this.#keyList[i], this)) {
@@ -29753,9 +29674,7 @@ class LRUCache {
     forEach(fn, thisp = this) {
         for (const i of this.#indexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             fn.call(thisp, value, this.#keyList[i], this);
@@ -29768,9 +29687,7 @@ class LRUCache {
     rforEach(fn, thisp = this) {
         for (const i of this.#rindexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             fn.call(thisp, value, this.#keyList[i], this);
@@ -29807,17 +29724,18 @@ class LRUCache {
         if (i === undefined)
             return undefined;
         const v = this.#valList[i];
-        const value = this.#isBackgroundFetch(v)
-            ? v.__staleWhileFetching
-            : v;
+        /* c8 ignore start - this isn't tested for the info function,
+         * but it's the same logic as found in other places. */
+        const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
         if (value === undefined)
             return undefined;
+        /* c8 ignore end */
         const entry = { value };
         if (this.#ttls && this.#starts) {
             const ttl = this.#ttls[i];
             const start = this.#starts[i];
             if (ttl && start) {
-                const remain = ttl - (perf.now() - start);
+                const remain = ttl - (this.#perf.now() - start);
                 entry.ttl = remain;
                 entry.start = Date.now();
             }
@@ -29829,7 +29747,7 @@ class LRUCache {
     }
     /**
      * Return an array of [key, {@link LRUCache.Entry}] tuples which can be
-     * passed to {@link LRLUCache#load}.
+     * passed to {@link LRUCache#load}.
      *
      * The `start` fields are calculated relative to a portable `Date.now()`
      * timestamp, even if `performance.now()` is available.
@@ -29845,9 +29763,7 @@ class LRUCache {
         for (const i of this.#indexes({ allowStale: true })) {
             const key = this.#keyList[i];
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined || key === undefined)
                 continue;
             const entry = { value };
@@ -29855,7 +29771,7 @@ class LRUCache {
                 entry.ttl = this.#ttls[i];
                 // always dump the start relative to a portable timestamp
                 // it's ok for this to be a bit slow, it's a rare operation.
-                const age = perf.now() - this.#starts[i];
+                const age = this.#perf.now() - this.#starts[i];
                 entry.start = Math.floor(Date.now() - age);
             }
             if (this.#sizes) {
@@ -29885,7 +29801,7 @@ class LRUCache {
                 //
                 // it's ok for this to be a bit slow, it's a rare operation.
                 const age = Date.now() - entry.start;
-                entry.start = perf.now() - age;
+                entry.start = this.#perf.now() - age;
             }
             this.set(key, entry.value, entry);
         }
@@ -29942,12 +29858,9 @@ class LRUCache {
         let index = this.#size === 0 ? undefined : this.#keyMap.get(k);
         if (index === undefined) {
             // addition
-            index = (this.#size === 0
-                ? this.#tail
-                : this.#free.length !== 0
-                    ? this.#free.pop()
-                    : this.#size === this.#max
-                        ? this.#evict(false)
+            index = (this.#size === 0 ? this.#tail
+                : this.#free.length !== 0 ? this.#free.pop()
+                    : this.#size === this.#max ? this.#evict(false)
                         : this.#size);
             this.#keyList[index] = k;
             this.#valList[index] = v;
@@ -29960,6 +29873,9 @@ class LRUCache {
             if (status)
                 status.set = 'add';
             noUpdateTTL = false;
+            if (this.#hasOnInsert) {
+                this.#onInsert?.(v, k, 'add');
+            }
         }
         else {
             // update
@@ -29991,8 +29907,8 @@ class LRUCache {
                 this.#valList[index] = v;
                 if (status) {
                     status.set = 'replace';
-                    const oldValue = oldVal && this.#isBackgroundFetch(oldVal)
-                        ? oldVal.__staleWhileFetching
+                    const oldValue = oldVal && this.#isBackgroundFetch(oldVal) ?
+                        oldVal.__staleWhileFetching
                         : oldVal;
                     if (oldValue !== undefined)
                         status.oldValue = oldValue;
@@ -30000,6 +29916,9 @@ class LRUCache {
             }
             else if (status) {
                 status.set = 'update';
+            }
+            if (this.#hasOnInsert) {
+                this.onInsert?.(v, k, v === oldVal ? 'update' : 'replace');
             }
         }
         if (ttl !== 0 && !this.#ttls) {
@@ -30066,6 +29985,10 @@ class LRUCache {
             }
         }
         this.#removeItemSize(head);
+        if (this.#autopurgeTimers?.[head]) {
+            clearTimeout(this.#autopurgeTimers[head]);
+            this.#autopurgeTimers[head] = undefined;
+        }
         // if we aren't about to use the index, then null these out
         if (free) {
             this.#keyList[head] = undefined;
@@ -30138,8 +30061,7 @@ class LRUCache {
     peek(k, peekOptions = {}) {
         const { allowStale = this.allowStale } = peekOptions;
         const index = this.#keyMap.get(k);
-        if (index === undefined ||
-            (!allowStale && this.#isStale(index))) {
+        if (index === undefined || (!allowStale && this.#isStale(index))) {
             return;
         }
         const v = this.#valList[index];
@@ -30181,9 +30103,13 @@ class LRUCache {
             }
             // either we didn't abort, and are still here, or we did, and ignored
             const bf = p;
-            if (this.#valList[index] === p) {
+            // if nothing else has been written there but we're set to update the
+            // cache and ignore the abort, or if it's still pending on this specific
+            // background request, then write it to the cache.
+            const vl = this.#valList[index];
+            if (vl === p || (ignoreAbort && updateCache && vl === undefined)) {
                 if (v === undefined) {
-                    if (bf.__staleWhileFetching) {
+                    if (bf.__staleWhileFetching !== undefined) {
                         this.#valList[index] = bf.__staleWhileFetching;
                     }
                     else {
@@ -30245,8 +30171,7 @@ class LRUCache {
             // defer check until we are actually aborting,
             // so fetchMethod can override.
             ac.signal.addEventListener('abort', () => {
-                if (!options.ignoreFetchAbort ||
-                    options.allowStaleOnFetchAbort) {
+                if (!options.ignoreFetchAbort || options.allowStaleOnFetchAbort) {
                     res(undefined);
                     // when it eventually resolves, update the cache.
                     if (options.allowStaleOnFetchAbort) {
@@ -30478,6 +30403,10 @@ class LRUCache {
         if (this.#size !== 0) {
             const index = this.#keyMap.get(k);
             if (index !== undefined) {
+                if (this.#autopurgeTimers?.[index]) {
+                    clearTimeout(this.#autopurgeTimers?.[index]);
+                    this.#autopurgeTimers[index] = undefined;
+                }
                 deleted = true;
                 if (this.#size === 1) {
                     this.#clear(reason);
@@ -30553,6 +30482,11 @@ class LRUCache {
         if (this.#ttls && this.#starts) {
             this.#ttls.fill(0);
             this.#starts.fill(0);
+            for (const t of this.#autopurgeTimers ?? []) {
+                if (t !== undefined)
+                    clearTimeout(t);
+            }
+            this.#autopurgeTimers?.fill(undefined);
         }
         if (this.#sizes) {
             this.#sizes.fill(0);
@@ -30681,7 +30615,7 @@ const entToType = (s) => s.isFile() ? IFREG
                         : s.isFIFO() ? IFIFO
                             : UNKNOWN;
 // normalize unicode path names
-const normalizeCache = new Map();
+const normalizeCache = new lru_cache_1.LRUCache({ max: 2 ** 12 });
 const normalize = (s) => {
     const c = normalizeCache.get(s);
     if (c)
@@ -30690,7 +30624,7 @@ const normalize = (s) => {
     normalizeCache.set(s, n);
     return n;
 };
-const normalizeNocaseCache = new Map();
+const normalizeNocaseCache = new lru_cache_1.LRUCache({ max: 2 ** 12 });
 const normalizeNocase = (s) => {
     const c = normalizeNocaseCache.get(s);
     if (c)
@@ -30881,13 +30815,17 @@ class PathBase {
     get parentPath() {
         return (this.parent || this).fullpath();
     }
+    /* c8 ignore start */
     /**
      * Deprecated alias for Dirent['parentPath'] Somewhat counterintuitively,
      * this property refers to the *parent* path, not the path object itself.
+     *
+     * @deprecated
      */
     get path() {
         return this.parentPath;
     }
+    /* c8 ignore stop */
     /**
      * Do not create new Path objects directly.  They should always be accessed
      * via the PathScurry class or other methods on the Path class.
